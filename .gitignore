@@ -1,0 +1,5 @@
+private/
+bin/
+*.pyc
+*.pyo
+.DS_Store

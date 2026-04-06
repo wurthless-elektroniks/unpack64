@@ -1,0 +1,143 @@
+'''
+Standard Iguana Entertainment / Acclaim Entertainment RNC unpacker
+
+Later versions are identifiable by the string "Acclaim Entertainment, Inc." in the bootexe.
+
+Examples:
+- Turok: Dinosaur Hunter
+
+Examples that also use the TLB:
+- All-Star Baseball 2000 (uses same TLB init block as Re-Volt)
+
+'''
+
+import logging
+import struct
+
+from compression.rnc import rnc_unpack
+from preamble import identify_preamble
+from n64rom import N64Rom
+from bffi import Bffi,BffiBuilder,BffiSectionType
+from signature import SignatureBuilder, WILDCARD
+
+logger = logging.getLogger(__name__)
+
+# ------------------------------------------------------------------------------------------
+#
+# Turok: Dinosaur Hunter
+#
+# Code in bootexe sets up the initial stackpointer then jumps to the RNC unpacker.
+# In the leaked Turok source this lands in boot.c at BootEntry(), which does the following:
+# - Read first 12 bytes of bootexe into RDRAM using BootTransfer().
+#   a0 = ROM address, a1 = destination RAM address, a2 = sizeof.
+# - If first 3 bytes are "RNC", copy payload to RDRAM to the mempool space and
+#   decompress it to the code segment start address. Otherwise, copy directly
+#   to the code segment start address. (Likely a debugging leftover.)
+# - Clear caches, clear BSS, then jump to the CRT entry point (boot()).
+#
+# The sourcecode states that "the O/S should now be alive!" after the
+# bootexe is unpacked. This is a bit misleading; what's actually happened is that,
+# now that the program is in memory, the libultra OS functions are present and can
+# be called. boot.c relies on this behavior to call the libultra cache clear functions.
+#
+# The unpacker stub needs to stay in RDRAM afterwards as there's a good chance other
+# code might be using it.
+#
+# ------------------------------------------------------------------------------------------
+
+# all we need here is the bootexe location in ROM.
+# the RNC payload already has the uncompressed payload size in its header.
+TUROK_BOOTENTRY_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xc0, # +0x00 addiu sp,sp,-0x40
+        0xaf, 0xb0, 0x00, 0x18, # +0x04 sw s0,local_28(sp)
+        0x3c, 0x10, WILDCARD, WILDCARD, # +0x08 lui s0,0x8000      <-- high bits of bootexe load address
+        0x3c, 0x04, WILDCARD, WILDCARD, # +0x0C lui a0,0x78        <-- high bits of RNC payload address in ROM (minus PI base)
+        0x26, 0x10, WILDCARD, WILDCARD, # +0x10 addiu s0,s0,0x1300 <-- low bits of bootexe load address
+        0xaf, 0xbf, 0x00, 0x1c, # +0x14 sw ra,local_24(sp)
+        0x24, 0x84, WILDCARD, WILDCARD, # +0x18 addiu a0,a0,0x3690 <-- low bits of RNC payload address
+    ]) \
+    .size(0x160) \
+    .tail_pattern([
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x128 lui   a0,0x8010
+        0x3c, 0x09, WILDCARD, WILDCARD,     # +0x12C lui   t1,0x8014
+        0x24, 0x82, WILDCARD, WILDCARD,     # +0x130 addiu v0,a0,-0x6fe0  - v0 = start of .bss
+        0x25, 0x29, WILDCARD, WILDCARD,     # +0x134 addiu t1,t1,-0x5ed0  - t1 = end of .bss
+        
+        # BSS clear loop, nothing special
+        0x01, 0x22, 0x18, 0x23,     # +0x138 subu       v1,t1,v0
+        0x00, 0x03, 0x58, 0x82,     # +0x13C srl        t3,v1,0x2
+        0x11, 0x60, 0x00, 0x06,     # +0x140 beq        t3,zero,LAB_80000620
+        0x25, 0x66, 0xff, 0xff,     # +0x144 _addiu     a2,t3,-0x1
+        0x00, 0xc0, 0x18, 0x25,     # +0x148 or         v1,a2,zero
+        0xac, 0x40, 0x00, 0x00,     # +0x14C sw         zero,0x0(v0)
+        0x24, 0x42, 0x00, 0x04,     # +0x150 addiu      v0,v0,0x4
+        0x14, 0xc0, 0xff, 0xfc,     # +0x154 bne        a2,zero,LAB_8000060c
+        0x24, 0xc6, 0xff, 0xff,     # +0x158 _addiu     a2,a2,-0x1
+        
+        # call the entrypoint (should be 0x80001300)
+        0x0c, WILDCARD, WILDCARD, WILDCARD,    # +0x15C  jal        FUN_80001300
+    ]) \
+    .const_op32_hi16("bootexe_load_address", 0x08) \
+    .const_op32_lo16("bootexe_load_address", 0x10) \
+    .const_op32_hi16("payload_rom_address", 0x0C) \
+    .const_op32_lo16("payload_rom_address", 0x18) \
+    .const_op32_hi16("bss_start_address", 0x128) \
+    .const_op32_lo16("bss_start_address", 0x130) \
+    .const_op32_hi16("bss_end_address", 0x12C) \
+    .const_op32_lo16("bss_end_address", 0x134) \
+    .xref_j_imm26("entrypoint", 0x15C) \
+    .build()
+
+def turok_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    # game uses generic libultra preamble with no .bss sections
+    logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    bootentry_offset = preamble.crt_entry_point() - ipc
+
+    if TUROK_BOOTENTRY_PATTERN.compare(rom.boot_exe(), bootentry_offset) is False:
+        return None
+    
+    logger.info("found Turok-style RNC unpacker")
+
+    consts = TUROK_BOOTENTRY_PATTERN.consts(ipc, rom.boot_exe(), bootentry_offset)
+    xrefs  = TUROK_BOOTENTRY_PATTERN.xrefs(ipc, rom.boot_exe(), bootentry_offset)
+
+    bootexe_load_address = consts["bootexe_load_address"].get_value()
+    payload_rom_address = consts["payload_rom_address"].get_value()
+    bss_start_address = consts["bss_start_address"].get_value()
+    bss_end_address = consts["bss_end_address"].get_value()
+    entrypoint = xrefs["entrypoint"].get_address()
+
+    logger.info("bootexe payload is in ROM at 0x%08x", payload_rom_address)
+    logger.info("bootexe loads to 0x%08x", bootexe_load_address)
+    logger.info("bss segment at 0x%08x~0x%08x", bss_start_address, bss_end_address)
+    logger.info("exe entry point at 0x%08x", entrypoint)
+
+    if rom.read_bytes(payload_rom_address, 4) != b'RNC\x01':
+        logger.error("payload does not use RNC type 1 compression")
+        return None
+
+    payload_compressed_size = struct.unpack(">I", rom.read_bytes(payload_rom_address + 8, 4))[0]
+    
+    logger.info("payload compressed size is %d byte(s)", payload_compressed_size)
+    payload = rom.read_bytes(payload_rom_address, 18 + payload_compressed_size)
+
+    logger.info("Unpacking RNC payload...")
+    payload = rnc_unpack(payload)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    bffi = BffiBuilder()
+    bffi.fix(ipc, rom.boot_exe()[:bootexe_load_address-ipc])
+    bffi.fix(bootexe_load_address, payload)
+    bffi.bss(bss_start_address, bss_end_address-bss_start_address)
+    bffi.initial_stack_pointer(preamble.initial_stack_pointer())
+    bffi.initial_program_counter(entrypoint)
+
+    return bffi.build()
