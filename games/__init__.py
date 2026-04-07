@@ -18,6 +18,24 @@ GAME_SPECIFIC_UNPACKERS = {
     # ECW Hardcore Revolution (U) [!]
     "c12c0f6579d9e49762658c73a58bf5b9a82fab154e29952039b7f8d231869d13": ecwwf_unpack,
 
+    # ECW Hardcore Revolution (E) [!]
+    "4902bdb739cea1eb5722a120bf046776eb2bb11bbd9a455f181555f9ea528e48": ecwwf_unpack,
+
+    # WWF - War Zone (U) [!]
+    "ee4f5a036423b78449475fa09471de6148ff6972d0510098943bc83092f990b5": ecwwf_unpack,
+
+    # WWF - War Zone (E) [!]
+    "75539b5fa0bcb196d7dae076d9317ac21864f953b63dcb78c85e7f4fb4144501": ecwwf_unpack,
+
+    # WWF Attitude (U) [!]
+    "a6702c3a7a535b785ad4bd75cdca2e1f15fca59556824b7c54bdae56ecae34d3": ecwwf_unpack,
+
+    # WWF Attitude (E) [!]
+    "403189fe4c003396404f12589e29ec9d6342d908ef87d9d3fc315aa3fa555c06": ecwwf_unpack,
+
+    # WWF Attitude (G) [!]
+    "97b7d1fa75de75181f9a4785ea9d7efc109a8cdcf26627fc3194aacdc3ebf268": ecwwf_unpack,
+
     # ------------------------------------------------------
     # Most variants of the Iguana/Turok/Acclaim RNC unpacker
     # ------------------------------------------------------
@@ -51,9 +69,11 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
 
     # Army Men - Sarge's Heroes (U) [!].z64
-    "b1992d8069cb7c14d5be4c351578058631cae9e1b2f29656ae7fb9d5ecc1dc22": sarge_unpack,   
+    "b1992d8069cb7c14d5be4c351578058631cae9e1b2f29656ae7fb9d5ecc1dc22": sarge_unpack,
+
     # Army Men - Sarge's Heroes (E) (M3) [!].z64
     "25d3091b4d0713099006933349c4b6e01e79e1f108596abbc5342a4d7d647066": sarge_unpack,
+    
     # Army Men - Sarge's Heroes 2 (U) [!].z64
     "ee8568e107b6d33128a5384d7614acac530cc834417e2c8e3d65e7ed9b82d546": sarge_unpack,
 

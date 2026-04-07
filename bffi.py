@@ -312,7 +312,6 @@ class Bffi(object):
             buffer += self._tlb.serialize()
 
         # BSS sections next
-        print(self._bss_sections)
         for section_id, bss in self._bss_sections.items():
             buffer += _serialize_bss(section_id, bss.virtual_load_address(), bss.section_size(), bss.initial_word())
 
@@ -458,6 +457,8 @@ class BffiBuilder(object):
         self._copy_ops = []
 
     def rom_hash(self, romhash: bytes):
+        if isinstance(romhash, str):
+            romhash = bytes.fromhex(romhash)
         if len(romhash) != 32:
             raise RuntimeError(f"romhash should be 32 bytes (or padded), instead got {len(romhash)} byte(s)")
         self._rom_hash = romhash
