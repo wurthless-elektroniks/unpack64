@@ -6,6 +6,8 @@ from .ecwwwf import ecwwf_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
 
+from .ubisoft import ray2us_unpack
+
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
 # ROM filenames are from an ancient goodn64 set, except where noted
@@ -83,6 +85,11 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Army Men - Sarge's Heroes 2 (U) [!].z64
     "ee8568e107b6d33128a5384d7614acac530cc834417e2c8e3d65e7ed9b82d546": sarge_unpack,
+
+    # ------------------------------------------------------
+    # Rayman 2 and other Ubisoft games using the same engine
+    # ------------------------------------------------------
+    "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2us_unpack,
 
     # ------------------------------------------------------
 }

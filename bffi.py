@@ -366,6 +366,24 @@ class Bffi(object):
 
             queued_section_data_size += len(segment.contents())
         
+        for segment_id, segment in self._seg_sections.items():
+            # no compression for the time being
+            contents = segment.contents()
+            uncompressed_size = len(contents)
+            crc = zlib.crc32(contents)
+            queued_section_data.append( segment.contents() )
+
+            queued_section_headers.append(_serialize_fix_or_seg(BffiSectionType.SEG,
+                                                    segment_id,
+                                                    total_headers_size + queued_section_data_size,
+                                                    segment.virtual_load_address(),
+                                                    uncompressed_size,
+                                                    uncompressed_size,
+                                                    crc,
+                                                    0))
+
+            queued_section_data_size += len(segment.contents())
+
         # now flush everything queued for serialization to the file
         for h in queued_section_headers + queued_headers:
             buffer += h
