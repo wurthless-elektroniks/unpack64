@@ -4,7 +4,7 @@ Game-specific unpacker drivers.
 
 from .ecwwwf import ecwwf_unpack
 from .sarge  import sarge_unpack
-from .iguana import turok_unpack
+from .iguana import turok_unpack, allstar99_unpack
 
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
@@ -64,6 +64,13 @@ GAME_SPECIFIC_UNPACKERS = {
     # Tokisora Senshi Turok (J) [!] (actual name Jikuu Senshi Turok i.e. Turok 1 Japanese)
     "78cd7b8174f1e54bae8a77b1c1314a0a147752635b2c95668e34464fedcf4d2d": turok_unpack,
 
+
+    # All-Star Baseball '99 (U) [!]
+    "018f19f4174f4efd2c2bb7aabf92a9218436bdbbf2fd65085801d6c86a0a9516": allstar99_unpack,
+
+    # All-Star Baseball '99 (E) [!]
+    "94c4b3f6964109fe237e158ba5a659d5c05b14361f35f6c36a3e6583434782ef": allstar99_unpack,
+
     # ------------------------------------------------------
     # 3DO / Sarge's Heroes games using a custom preamble
     # ------------------------------------------------------
@@ -73,7 +80,7 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Army Men - Sarge's Heroes (E) (M3) [!].z64
     "25d3091b4d0713099006933349c4b6e01e79e1f108596abbc5342a4d7d647066": sarge_unpack,
-    
+
     # Army Men - Sarge's Heroes 2 (U) [!].z64
     "ee8568e107b6d33128a5384d7614acac530cc834417e2c8e3d65e7ed9b82d546": sarge_unpack,
 

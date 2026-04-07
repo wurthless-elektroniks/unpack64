@@ -19,6 +19,7 @@ from preamble import identify_preamble
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from signature import SignatureBuilder, WILDCARD
+from mips import disassemble_jump_imm26_target
 
 logger = logging.getLogger(__name__)
 
@@ -141,3 +142,125 @@ def turok_unpack(rom: N64Rom, ipc: int) -> Bffi:
     bffi.initial_program_counter(entrypoint)
 
     return bffi.build()
+
+
+# ------------------------------------------------------------------------------------------
+#
+# All-Star Baseball '99
+#
+# Has a file table at the start of ROM. Boot executable is called CODE.BIN;
+# offset in ROM is hardcoded into the unpack stub.
+# "Acclaim Entertainment, Inc." string follows preamble.
+#
+# ------------------------------------------------------------------------------------------
+
+ALLSTAR99_BOOTENTRY_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,         # +0x00 addiu  sp,sp,-0x28
+        0x3c, 0x02, 0x80, 0x00,         # +0x04 lui    v0,0x8000
+        0x34, 0x42, 0x03, 0x80,         # +0x08 ori    v0,v0,0x380   <-- ???
+        0x3c, 0x04, WILDCARD, WILDCARD, # +0x0C lui    a0,0x0
+        0x24, 0x84, WILDCARD, WILDCARD, # +0x10 addiu  a0,a0,0x32e0  <-- start of file table; pointing to bootexe size
+        0x27, 0xa5, 0x00, 0x10,         # +0x14 addiu  a1,sp,0x10
+        0xaf, 0xb0, 0x00, 0x18,         # +0x18 sw     s0,local_10(sp)
+        0x3c, 0x10, WILDCARD, WILDCARD, # +0x1C lui    s0,0x0
+        0x26, 0x10, WILDCARD, WILDCARD, # +0x20 addiu  s0,s0,0x5688  <-- bootexe payload ROM address
+    ]) \
+    .tail_pattern([
+        0x3c, 0x01, 0x80, WILDCARD,     # +0xC4 lui at,0x8000
+        0x34, 0x21, WILDCARD, WILDCARD, # +0xC8 ori at,at,0x400
+        0x00, 0x20, 0xf8, 0x09,         # +0xCC jalr at=>SUB_80000400
+        0x00, 0x00, 0x00, 0x00,         # +0xD0 _nop
+    ]) \
+    .size(0xD4) \
+    .const_op32_hi16("payload_size_offset", 0x0C) \
+    .const_op32_lo16("payload_size_offset", 0x10) \
+    .const_op32_hi16("payload_offset", 0x1C) \
+    .const_op32_lo16("payload_offset", 0x20) \
+    .const_op32_hi16("entry_point", 0xC4) \
+    .const_op32_lo16("entry_point", 0xC8) \
+    .build()
+
+ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe0,             # +0x00 addiu  sp,sp,-0x20
+        0xaf, 0xbf, 0x00, 0x1c,             # +0x04 sw     ra,local_4(sp)
+        0x0c, 0x00, WILDCARD, WILDCARD,     # +0x08 jal    FUN_80017c18    <-- another BSS section clear-er
+        0xaf, 0xb0, 0x00, 0x18,             # +0x0C _sw    s0,local_8(sp)
+        0x3c, 0x03, 0x80, WILDCARD,         # +0x10 lui    v1,0x8006       <-- BSS start
+        0x24, 0x63, WILDCARD, WILDCARD,     # +0x14 addiu  v1,v1,0x7770
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x18 lui    a0,0x800b       <-- BSS end
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x1C addiu  a0,a0,-0x2b28
+    ]) \
+    .const_op32_hi16("bss_start", 0x10) \
+    .const_op32_lo16("bss_start", 0x14) \
+    .const_op32_hi16("bss_end", 0x18) \
+    .const_op32_lo16("bss_end", 0x1C) \
+    .build()
+
+
+def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    bootentry_offset = preamble.crt_entry_point() - ipc
+    logger.info("check for BootEntry() at 0x%08x", preamble.crt_entry_point())
+    if ALLSTAR99_BOOTENTRY_PATTERN.compare(rom.boot_exe(), bootentry_offset) is False:
+        return None
+
+    logger.info("found Acclaim All-Star Baseball '99-style RNC unpacker")
+
+    consts = ALLSTAR99_BOOTENTRY_PATTERN.consts(ipc, rom.boot_exe(), bootentry_offset)
+
+    payload_size_offset = consts["payload_size_offset"].get_value()
+    payload_offset = consts["payload_offset"].get_value()
+    entry_point = consts["entry_point"].get_value()
+
+    payload_size = struct.unpack(">I",rom.read_bytes(payload_size_offset,4))[0]
+
+    logger.info("Compressed boot executable in ROM at 0x%08x (size %d/0x%08x bytes)",
+                payload_offset,
+                payload_size,
+                payload_size)
+    
+    payload = rom.read_bytes(payload_offset, payload_size)
+
+    # FIXME: CRC16 fails for Allstar Baseball 99 (Europe)
+    logger.info("Unpacking RNC payload...")
+    payload = rnc_unpack(payload)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    if payload[0] != 0x0C:
+        logger.error("expected payload to start with a jal, but it didn't")
+        return None
+    
+    real_crt_startup_location = disassemble_jump_imm26_target(entry_point, payload[0:4])
+    if real_crt_startup_location is None:
+        logger.error("can't grab real CRT startup location")
+        return None
+    
+    logger.info("real CRT startup is at 0x%08x",real_crt_startup_location)
+
+    real_entry_point_offset = real_crt_startup_location - entry_point
+    if ALLSTAR99_REAL_ENTRY_POINT_PATTERN.compare(payload, real_entry_point_offset) is False:
+        logger.error("expected entry point code didn't match signature")
+        return None
+
+    real_entry_point_consts = ALLSTAR99_REAL_ENTRY_POINT_PATTERN.consts(entry_point, payload, real_entry_point_offset)
+
+    bss_start = real_entry_point_consts["bss_start"].get_value()
+    bss_end   = real_entry_point_consts["bss_end"].get_value()
+
+    logger.warning("this unpacker isn't quite complete yet, but i'll produce something for you anyway...")
+
+    builder = BffiBuilder()
+    builder.bss(bss_start, bss_end-bss_start)
+    builder.fix(entry_point, payload, segment_id=1)
+    builder.initial_program_counter(real_crt_startup_location)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    return builder.build()

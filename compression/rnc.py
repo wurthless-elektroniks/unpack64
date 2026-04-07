@@ -242,7 +242,7 @@ def _unpack_type_1(buffer: bytes) -> bytes | None:
     
     actual_compressed_crc16 = crc16(buffer, 18, compressed_length)
     if actual_compressed_crc16 != compressed_crc16:
-        logging.error("RNC CRC-16 mismatch: expected %04x, got %04x", compressed_crc16, actual_compressed_crc16)
+        logging.error("RNC CRC-16 mismatch on compressed data: expected %04x, got %04x", compressed_crc16, actual_compressed_crc16)
         return None
 
     bitstream = _RncBitStream(buffer, 18)
