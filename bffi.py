@@ -134,6 +134,16 @@ class BffiSectionType(Enum):
     segment_type,segment_id,rom_start_address,rom_end_address
     '''
 
+PAGE_SIZE_LUT = {
+    (0x0000 << 13): 4 * 1024,
+    (0x0003 << 13): 16 * 1024,
+    (0x000F << 13): 64 * 1024,
+    (0x003F << 13): 256 * 1024,
+    (0x00FF << 13): 1024 * 1024,
+    (0x03FF << 13): 4 * 1024 * 1024,
+    (0x0FFF << 13): 16 * 1024 * 1024
+}
+
 def _serialize_section_marker(section_id: int,
                               section_type: BffiSectionType,
                               unused_1: int = 0,
@@ -205,6 +215,9 @@ class BffiCopyEntry(Finalizable):
             self._copy_length = new_copy_length
         return self._copy_length
 
+def _entrylo_valid(entrylo):
+    return (entrylo & 2) != 0
+
 class BffiTlbEntry(Finalizable):
     def __init__(self):
         super().__init__()
@@ -236,11 +249,24 @@ class BffiTlbEntry(Finalizable):
             self._assert_not_final()
             self._pagemask = new_pagemask
         return self._pagemask
+    
+    def is_valid(self):
+        return _entrylo_valid(self._entrylo0) or _entrylo_valid(self._entrylo1)
+    
+    def page_number(self):
+        return self._entryhi >> 13
+    
+    def asid(self):
+        return self._entryhi & 0xFF
+    
+    def is_global(self):
+        return (self._entrylo0 & 1) != 0 and (self._entrylo1 & 1) != 0
+    
 
 class BffiTlb(object):
     def __init__(self):
         self._random_reg = 0
-        self._entries = [ [None] * 0x20 ]
+        self._entries: list[BffiTlbEntry] = [ None ] * 0x20
         self._final = False
 
     def _assert_not_final(self):
@@ -278,6 +304,97 @@ class BffiTlb(object):
 
         pass
 
+    def _tlb_lookup_entry_for_address(self, address: int, entryhi_value: int = 0) -> BffiTlbEntry | None:
+        '''
+        Attempt TLB lookup for given virtual address. Returns the entry and the matching
+        EntryLoX value.
+
+        entryhi_value is used to select the current ASID. N64 games typically
+        don't use the ASID field, so it can be left zero.
+        '''
+        # paraphrased from the VR4300 manual:
+        #
+        # the virtual 32-bit address reserves bits 31/30/29 for page permissions
+        # (user/supervisor/kernel). on n64 games execution should always be in kernel
+        # mode but we'll have to keep in mind games frequently destroy any assumption
+        # i make.
+        #
+        # with 4k pages bits 28~12 will be the virtual page number, and the low 11 bits
+        # are the offset added to the physical page.
+
+        current_asid = entryhi_value & 0xFF
+
+        for i,tlb_entry in enumerate(self._entries):
+            if tlb_entry is None:
+                raise RuntimeError(f"uninitialized TLB entry at index {i:02x}")
+
+            if tlb_entry.is_valid() is False:
+                continue
+
+            logger.debug("TLB entry 0x%02x valid, checking it", i)
+            
+            if tlb_entry.is_global() is False and \
+                tlb_entry.asid() != current_asid:
+                logger.debug("- not global and ASID didn't match")
+                continue
+
+            mask = tlb_entry.pagemask()
+            if mask not in PAGE_SIZE_LUT:
+                raise RuntimeError(f"illegal cop0 PageMask: {mask:08x}")
+            
+            page_size = PAGE_SIZE_LUT[mask]
+            page_mask         = (page_size << 1) - 1
+            even_odd_pagemask = page_size
+
+            virtual_page = address & ~page_mask
+
+            logger.debug("page_size %08x", page_size)
+            logger.debug("page_mask %08x", page_mask)
+            logger.debug("even_odd_pagemask %08x", even_odd_pagemask)
+            logger.debug("virtual page %08x", virtual_page)
+
+            page_number = tlb_entry.page_number() & ~page_mask
+            logger.debug("this page number %08x", page_number)
+            if page_number != virtual_page:
+                continue
+            
+            # the caller will re-check this but it's not that important
+            entrylo = tlb_entry.entrylo0() if (address & even_odd_pagemask) == 0 else tlb_entry.entrylo1()
+            if _entrylo_valid(entrylo) is False:
+                logger.debug("...ended up in an unmapped page.")
+                continue
+
+            return (self._entries[i], entrylo)
+
+        return None
+
+    def _address_is_kseg0_or_kseg1(self, address: int):
+        return 0x80000000 <= address < 0xA0000000 or 0xA0000000 <= address < 0xC0000000
+
+    def virtual_to_physical(self, address: int, entryhi_value: int = 0) -> int | None:
+        '''
+        Convert virtual to physical address.
+        Return address if successful, None if address not mapped.
+
+        This function implements some protection against pagefaults including null pointer dereference.
+        It's still up to the MMU as to if the kseg0/kseg1 access is valid.
+        '''
+        if self._address_is_kseg0_or_kseg1(address):
+            return address & 0x1FFFFFFF
+        
+        tlb_entry_tuple = self._tlb_lookup_entry_for_address(address, entryhi_value=entryhi_value)
+        if tlb_entry_tuple is None:
+            return None
+        
+        entrylo   = tlb_entry_tuple[1]
+
+        page_size         = PAGE_SIZE_LUT[tlb_entry_tuple[0].pagemask()]
+        himask = page_size - 1
+        even_odd_pagemask = page_size
+        lomask = even_odd_pagemask - 1
+
+        return ((entrylo << 6) & ~himask) | (address & lomask)
+
 class Bffi(object):
     def __init__(self):
         self._rom_hash = None
@@ -302,8 +419,8 @@ class Bffi(object):
         # --- metadata ---
 
         if self._rom_hash is not None and self._rom_hash != bytes([0] * 32):
-            buffer.append(_serialize_section_type_only(BffiSectionType.SHA))
-            buffer.append(self._rom_hash)
+            buffer += _serialize_section_type_only(BffiSectionType.SHA)
+            buffer += self._rom_hash
 
         # --- end of metadata, start of stuff actually needed by the loader ---
 
@@ -577,6 +694,7 @@ class BffiBuilder(object):
 
         bffi._initial_sp = self._initial_sp
         bffi._ipc = self._ipc
+        bffi._rom_hash = self._rom_hash
 
         bffi._fix_sections = self._fix_segments
         bffi._seg_sections = self._seg_segments

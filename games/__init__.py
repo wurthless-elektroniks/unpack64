@@ -5,8 +5,9 @@ Game-specific unpacker drivers.
 from .ecwwwf import ecwwf_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
-
 from .ubisoft import ray2us_unpack
+
+from .tlb import tlb_try_detect_singleton
 
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
@@ -90,6 +91,17 @@ GAME_SPECIFIC_UNPACKERS = {
     # Rayman 2 and other Ubisoft games using the same engine
     # ------------------------------------------------------
     "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2us_unpack,
+
+
+    # ------------------------------------------------------
+    # Games using standard TLB but nothing else that's fancy
+    # ------------------------------------------------------
+
+    # Re-Volt (U) [!]
+    #"826fd84fb778f6ddaa8bc14cbf116fb25bf1bf6ed4b833d7e30501be6f144823": tlb_try_detect_singleton,
+    
+    # Turok 2 (testing only)
+    #"a182ff273697bd337c17be427041a1dee6dec0f90d7d62407843c5eabb7e6ef0": tlb_try_detect_singleton,
 
     # ------------------------------------------------------
 }

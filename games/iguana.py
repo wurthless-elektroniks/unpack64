@@ -135,6 +135,7 @@ def turok_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
 
     bffi = BffiBuilder()
+    bffi.rom_hash(rom.sha256())
     bffi.fix(ipc, rom.boot_exe()[:bootexe_load_address-ipc])
     bffi.fix(bootexe_load_address, payload)
     bffi.bss(bss_start_address, bss_end_address-bss_start_address)

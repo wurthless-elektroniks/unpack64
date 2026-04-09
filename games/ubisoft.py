@@ -34,6 +34,7 @@ def ray2us_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
 
     builder = BffiBuilder()
+    builder.rom_hash(rom.sha256())
 
     for start_addr,end_addr in preamble.bss_sections():
         builder.bss(start_addr,end_addr-start_addr)

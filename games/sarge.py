@@ -104,6 +104,7 @@ def sarge_unpack(rom: N64Rom, ipc: int) -> Bffi:
     )
 
     builder = BffiBuilder()
+    builder.rom_hash(rom.sha256())
     builder.fix(ipc, bootexe[:i55_start_address-ipc])
     builder.bss(i55_start_address, i55_end_address-i55_start_address, init_word=0x55555555)
     builder.bss(bss_start_address, bss_end_address-bss_start_address)
