@@ -196,3 +196,4 @@ def tlb_try_detect_singleton(rom: N64Rom, ipc: int):
     if real_entry_point is None:
         logger.error("sanity check failed! entry point points to unmapped memory space")
         return None
+    logger.info("virtual address %08x -> physical address %08x", entry_point, real_entry_point)

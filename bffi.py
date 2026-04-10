@@ -91,10 +91,17 @@ class BffiSectionType(Enum):
     Set TLB cop0 Random register to this value.
     '''
 
-    TLB_ZERO_RANGE = 0x0D
+    TLB_UNMAP_RANGE = 0x0D
     '''
-    Sets range of TLB entries starting from the current index to zero
-    while auto-incrementing the Index value.
+    Unmaps range of TLB entries from the current index,
+    incrementing Index as we go.
+    
+    Values will be set as follows:
+    - EntryHi  = 0x80000000
+    - EntryLo0 = 0x00000000
+    - EntryLo1 = 0x00000000
+
+    PageMask will not be updated.
     '''
 
     TLB_SET = 0x0E
@@ -107,10 +114,10 @@ class BffiSectionType(Enum):
     and the values expected to be written to them.
     '''
 
-    TLB_ZERO = 0x0F
+    TLB_UNMAP = 0x0F
     '''
-    Set TLB entry at the current Index to zero, then increment Index value.
-    This is equivalent to TLB_SET with EntryHi, EntryLo0/1 and PageMask all set to zero.
+    Unmap single TLB entry at the current Index, then increment Index value.
+    See also TLB_UNMAP_RANGE.
     '''
 
     # ------------------------------
@@ -300,7 +307,23 @@ class BffiTlb(object):
         # - The loader keeps track of the Index value in a MIPS register and increments it
         #   after a page entry is written.
         # - The Index value will default to 0.
+        # - The EntryHi value, which selects the ASID, will be undefined, but will be preserved
+        #   after an entry is written.
         # - The cop0 Index register will be set to the current Index value before a page entry is written.
+
+        for i in range(0x20):
+            entry = self._entries[i]
+            
+            if entry.entryhi() == 0x80000000 and \
+               entry.entrylo0() == 0x00000000 and \
+               entry.entrylo1() == 0x00000000:
+                # entry is unmapped
+                pass
+            
+            # otherwise, the entry is mapped
+
+            pass
+
 
         pass
 
@@ -342,24 +365,20 @@ class BffiTlb(object):
             if mask not in PAGE_SIZE_LUT:
                 raise RuntimeError(f"illegal cop0 PageMask: {mask:08x}")
             
-            page_size = PAGE_SIZE_LUT[mask]
-            page_mask         = (page_size << 1) - 1
-            even_odd_pagemask = page_size
+            # using https://en64.shoutwiki.com/wiki/N64_TLB as a reference here...
+            page_size           = (mask >> 1) | 0x0FFF
+            mask                = mask | 0x1FFF
+            virtual_page_number = tlb_entry.entryhi() & ~mask
 
-            virtual_page = address & ~page_mask
-
-            logger.debug("page_size %08x", page_size)
-            logger.debug("page_mask %08x", page_mask)
-            logger.debug("even_odd_pagemask %08x", even_odd_pagemask)
-            logger.debug("virtual page %08x", virtual_page)
-
-            page_number = tlb_entry.page_number() & ~page_mask
-            logger.debug("this page number %08x", page_number)
-            if page_number != virtual_page:
+            logger.debug("page size %08x, mask %08x, vpn %08x", page_size, mask, virtual_page_number)
+            if (address & virtual_page_number) != virtual_page_number:
+                logger.debug("...miss")
                 continue
+
+            even_odd_pagemask = PAGE_SIZE_LUT[tlb_entry.pagemask()]
             
-            # the caller will re-check this but it's not that important
             entrylo = tlb_entry.entrylo0() if (address & even_odd_pagemask) == 0 else tlb_entry.entrylo1()
+            logger.debug("entrylo was: %08x", entrylo)
             if _entrylo_valid(entrylo) is False:
                 logger.debug("...ended up in an unmapped page.")
                 continue
@@ -386,14 +405,15 @@ class BffiTlb(object):
         if tlb_entry_tuple is None:
             return None
         
-        entrylo   = tlb_entry_tuple[1]
+        entrylo     = tlb_entry_tuple[1]
+        page_mask   = (tlb_entry_tuple[0].pagemask() >> 1) | 0x0FFF
 
-        page_size         = PAGE_SIZE_LUT[tlb_entry_tuple[0].pagemask()]
-        himask = page_size - 1
-        even_odd_pagemask = page_size
-        lomask = even_odd_pagemask - 1
+        physical_page_number = (entrylo >> 6) & 0xFFFFFF
+        return (address & page_mask) | (physical_page_number * PAGE_SIZE_LUT[tlb_entry_tuple[0].pagemask()])
 
-        return ((entrylo << 6) & ~himask) | (address & lomask)
+    def print_info(self):
+        pass
+
 
 class Bffi(object):
     def __init__(self):
@@ -768,11 +788,11 @@ def _handle_tlb_set(buffer: bytes, offset: int, current_tlb_idx: int, tlb: BffiT
 
     return offset+20, current_tlb_idx+1
 
-def _handle_tlb_zero(buffer: bytes, offset: int, current_tlb_idx: int, tlb: BffiTlb) -> tuple[int,int]:
+def _handle_tlb_unmap(buffer: bytes, offset: int, current_tlb_idx: int, tlb: BffiTlb) -> tuple[int,int]:
     entry = tlb.entry(current_tlb_idx)
     
     entry = BffiTlbEntry()
-    entry.entryhi(0)
+    entry.entryhi(0x80000000)
     entry.entrylo0(0)
     entry.entrylo1(0)
     entry.pagemask(0)
@@ -780,12 +800,12 @@ def _handle_tlb_zero(buffer: bytes, offset: int, current_tlb_idx: int, tlb: Bffi
 
     return offset+4, current_tlb_idx+1
 
-def _handle_tlb_zero_range(buffer: bytes, offset: int, current_tlb_idx: int, tlb: BffiTlb) -> tuple[int,int]:
+def _handle_tlb_unmap_range(buffer: bytes, offset: int, current_tlb_idx: int, tlb: BffiTlb) -> tuple[int,int]:
     _, count = struct.unpack(">II", buffer[offset:offset+8])
 
     for _ in range(count):
         entry = BffiTlbEntry()
-        entry.entryhi(0)
+        entry.entryhi(0x80000000)
         entry.entrylo0(0)
         entry.entrylo1(0)
         entry.pagemask(0)
@@ -865,11 +885,11 @@ def bffi_parse_from_binary(data: bytes, segment_fetch_cb) -> Bffi | None:
                 offset, tlb_random = _parse_generic_u32(data, offset)
                 tlb.random(tlb_random)
 
-            case BffiSectionType.TLB_ZERO_RANGE:
+            case BffiSectionType.TLB_UNMAP_RANGE:
                 if tlb is None:
                     tlb = BffiTlb()
 
-                offset, current_tlb_idx = _handle_tlb_zero_range(data, offset, current_tlb_idx, tlb)
+                offset, current_tlb_idx = _handle_tlb_unmap_range(data, offset, current_tlb_idx, tlb)
 
             case BffiSectionType.TLB_SET:
                 if tlb is None:
@@ -877,11 +897,11 @@ def bffi_parse_from_binary(data: bytes, segment_fetch_cb) -> Bffi | None:
 
                 offset, current_tlb_idx = _handle_tlb_set(data, offset, current_tlb_idx, tlb)
 
-            case BffiSectionType.TLB_ZERO:
+            case BffiSectionType.TLB_UNMAP:
                 if tlb is None:
                     tlb = BffiTlb()
 
-                offset, current_tlb_idx = _handle_tlb_zero(data, offset, current_tlb_idx, tlb)
+                offset, current_tlb_idx = _handle_tlb_unmap(data, offset, current_tlb_idx, tlb)
 
             case BffiSectionType.SHA:
                 offset, sha = _parse_sha(data, offset)
