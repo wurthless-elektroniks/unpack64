@@ -3,10 +3,10 @@ Game-specific unpacker drivers.
 '''
 
 from .ecwwwf import ecwwf_unpack
+from .extremeg import extremeg_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
 from .ubisoft import ray2us_unpack
-
 from .tlb import tlb_try_detect_singleton
 
 # points hash -> unpacker function.
@@ -92,6 +92,10 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
     "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2us_unpack,
 
+    #
+    # Extreme-G LZSS packer
+    #
+    "9e67bc574e40ef273759d587972655003d5213e625bfa68d3071dc9782d2071c": extremeg_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
