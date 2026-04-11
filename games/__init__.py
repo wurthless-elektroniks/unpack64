@@ -4,6 +4,7 @@ Game-specific unpacker drivers.
 
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
+from .rare import bk_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
 from .ubisoft import ray2us_unpack
@@ -96,6 +97,19 @@ GAME_SPECIFIC_UNPACKERS = {
     # Extreme-G LZSS packer
     #
     "9e67bc574e40ef273759d587972655003d5213e625bfa68d3071dc9782d2071c": extremeg_unpack,
+
+    # ------------------------------------------------------
+    # Rareware deflate() unpacker
+    # ------------------------------------------------------
+
+    # Banjo-Kazooie (U) (v1.0) [!]
+    "59875835b9a5128bb0054315a7f929e2071c2001e528d70bf543e1d6680e6eff": bk_unpack,
+
+    # Banjo to Kazooie no Daibouken (J) [!]
+    "f766bdb553dd38bf1ce1b9395647aa44abb85503ef08592c8c1a94b15eb6dbfb": bk_unpack,
+
+    # Banjo-Kazooie (E) (M3) [!]
+    "d4e7534d8bcdc329386bf28dcb86e35136e793622f3e6913342500d17e89a931": bk_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
