@@ -427,6 +427,8 @@ class Bffi(object):
         self._seg_sections: dict[int,BffiCodeSegment] = {}
         self._fix_sections: dict[int,BffiCodeSegment] = {}
 
+        self._required_memory_size = 0
+
     def rom_hash(self) -> bytes:
         return self._rom_hash
 
@@ -434,8 +436,18 @@ class Bffi(object):
         buffer = bytearray()
 
         # magic word goes first
-        buffer += b'BFFI\0\0\0\0'
-        
+        buffer += b'BFFI'
+
+        # version field
+        buffer.append(0)
+
+        # memory size required (0 = works for both 4mb and 8mb systems)
+        buffer.append(self._required_memory_size)
+
+        # unused/reserved, leave zero
+        buffer.append(0)
+        buffer.append(0)
+
         # --- metadata ---
 
         if self._rom_hash is not None and self._rom_hash != bytes([0] * 32):
@@ -611,6 +623,15 @@ class BffiBuilder(object):
         # memory copy operations
         self._copy_ops = []
 
+        # required memory size
+        # 0 = works on both 4 mb and 8 mb systems
+        # 4 = 4 mb systems only
+        # 8 = 8 mb systems only
+        #
+        # reason for this is in case games build completely different code for 4mb/8mb systems,
+        # and for games that require the expansion pak
+        self._required_memory_size = 0
+
     def rom_hash(self, romhash: bytes):
         if isinstance(romhash, str):
             romhash = bytes.fromhex(romhash)
@@ -701,6 +722,9 @@ class BffiBuilder(object):
 
         self._copy_ops.append(copy_op)
 
+    def required_memory_size(self, megabytes: int):
+        self._required_memory_size = megabytes
+
     def initial_program_counter(self, virtual_address: int):
         self._ipc = virtual_address
         return self
@@ -719,6 +743,7 @@ class BffiBuilder(object):
         bffi._fix_sections = self._fix_segments
         bffi._seg_sections = self._seg_segments
         bffi._bss_sections = self._bss_segments
+        bffi._required_memory_size = self._required_memory_size
 
         return bffi
 
@@ -824,8 +849,8 @@ def bffi_parse_from_binary(data: bytes, segment_fetch_cb) -> Bffi | None:
         logger.error("not a BFFI: magic word didn't match")
         return None
     
-    if (data[5] >> 4) != 0:
-        logger.error("version field not 0")
+    if (data[4] >> 4) != 0:
+        logger.error("version is not 0")
         return None
 
     offset = 8

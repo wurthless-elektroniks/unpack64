@@ -1,6 +1,11 @@
 '''
 Rareware games, all using variations on zlib deflate
 GEDecompressor used as primary reference here
+
+The boot stubs typically work by decompressing the first bit of code to
+higher memory, then initialize a table of magic locations before running it.
+The magic table contains pointers in ROM for additional code stubs and resources
+that need to be decompressed.
 '''
 
 import struct
@@ -275,3 +280,27 @@ def blastcorps_unpack(rom: N64Rom, ipc: int):
     builder.initial_program_counter(preamble.crt_entry_point())
 
     return builder.build()
+
+# ---------------------------------------------------------------
+#
+# Donkey Kong 64
+# Standard gzip without filenames
+#
+# The boot stub on this one is a bit larger than usual because the
+# game needs to detect RDRAM size. If less than 8 mbytes, it runs
+# the "Expansion Pak not present" screen and halts. But if the
+# Expansion Pak is present, the game decompresses the main code
+# to 0x805xxxxx, initializes the big table o' magic pointers,
+# and runs it.
+#
+# This game is the main reason why we have a "required memory size" field
+# in the BFFI format.
+#
+# ---------------------------------------------------------------
+
+# ---------------------------------------------------------------
+#
+# Banjo-Tooie
+# zlib with a two-byte header that means... uh... something?
+#
+# ---------------------------------------------------------------
