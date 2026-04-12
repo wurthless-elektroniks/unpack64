@@ -7,7 +7,7 @@ import struct
 import logging
 import zlib
 
-from preamble import identify_preamble
+from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from signature import SignatureBuilder, WILDCARD
@@ -50,6 +50,54 @@ BK_BOOTLOADER_DECOMPRESS_PATTERN = SignatureBuilder() \
     .const_op32_lo16("payload_rom_end",        0x34) \
     .build()
 
+# this massive piece of crap initializes a table in high RAM that points to
+# various zlib-compressed resources, including the main engine code segment.
+# for now, i'm only extracting the engine.
+BK_MAIN_EXECUTABLE_TABLE_INIT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x00 lui   v0,0x8040     <-- table base
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x04 addiu v0,v0,-0x1f0
+        0x3c, 0x0e, 0x00, WILDCARD,         # +0x08 lui   t6,0xf3 <-- t6 = engine code start address in ROM
+        0x3c, 0x0f, WILDCARD, WILDCARD,         # +0x0C lui   t7,0xfa <-- t7 = some other resource
+        0x3c, 0x18, WILDCARD, WILDCARD,         # +0x10 lui   t8,0xfe
+        0x3c, 0x19, WILDCARD, WILDCARD,         # +0x14 lui   t9,0xfe
+        0x3c, 0x08, WILDCARD, WILDCARD,         # +0x18 lui   t0,0xfa
+        0x3c, 0x09, WILDCARD, WILDCARD,         # +0x1C lui   t1,0xfa
+        0x3c, 0x0a, WILDCARD, WILDCARD,         # +0x20 lui   t2,0xfa
+        0x3c, 0x0b, WILDCARD, WILDCARD,         # +0x24 lui   t3,0xfb
+        0x3c, 0x0c, WILDCARD, WILDCARD,         # +0x28 lui   t4,0xfb
+        0x3c, 0x0d, WILDCARD, WILDCARD,         # +0x2C lui   t5,0xfb
+        0x25, 0xce, WILDCARD, WILDCARD,     # +0x30 addiu t6,t6,0x7f90 
+        0x25, 0xef, WILDCARD, WILDCARD      # +0x34 addiu t7,t7,0x3fd0
+    ]) \
+    .const_op32_hi16("engine_start_address", 0x08) \
+    .const_op32_lo16("engine_start_address", 0x30) \
+    .const_op32_hi16("engine_end_address",   0x0C) \
+    .const_op32_lo16("engine_end_address",   0x34) \
+    .build()
+
+# the main code segment clears its own BSS section, then reinitializes
+# the OS because the bootloader stub is likely to be cleared from RAM soon.
+# then it creates the idle thread, which starts the main thread, and the main
+# thread loads in a code segment of its own (not sure where it comes from yet)
+BK_MAINSEG_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe8,             # +0x00 addiu  sp,sp,-0x18
+        0xaf, 0xa4, 0x00, 0x18,             # +0x04 sw     a0,0x18(sp)
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x08 lui    a0,0x8028 <-- a0 = BSS start
+        0x3c, 0x0e, 0x80, WILDCARD,         # +0x0C lui    t6,0x8028 <-- t6 = BSS end
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x10 addiu  a0,a0,-0x5ed0
+        0xaf, 0xbf, 0x00, 0x14,             # +0x14 sw     ra,0x14(sp)
+        0x25, 0xce, WILDCARD, WILDCARD,     # +0x18 addiu  t6,t6,0x6f90
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal    FUN_80263b40    <-- memory clear function
+    ]) \
+    .const_op32_hi16("bss_start", 0x08) \
+    .const_op32_lo16("bss_start", 0x10) \
+    .const_op32_hi16("bss_end", 0x0C) \
+    .const_op32_lo16("bss_end", 0x18) \
+    .build()
+
+
 def bk_unpack(rom: N64Rom, ipc: int):
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -83,16 +131,46 @@ def bk_unpack(rom: N64Rom, ipc: int):
     
     logger.info("decompress ok; payload drops to 0x%08x in RDRAM", payload_target_address)
 
+    if BK_MAINSEG_ENTRY_POINT_PATTERN.compare(payload) is False:
+        logger.error("oops, payload entry point mismatch")
+        return None
+    
+    entrypoint_consts = BK_MAINSEG_ENTRY_POINT_PATTERN.consts(payload_target_address, payload)
+
+    main_bss_start = entrypoint_consts["bss_start"].get_value()
+    main_bss_end   = entrypoint_consts["bss_end"].get_value()
+
+    magic_table_init_offset = BK_MAIN_EXECUTABLE_TABLE_INIT_PATTERN.find(rom.boot_exe()[:0x2000])
+    if magic_table_init_offset is None:
+        logger.error("magic table init function wasn't found. can't extract engine code.")
+        return None
+    
+    logger.info("magic table init function at 0x%08x", magic_table_init_offset + ipc)
+    
+    magic_table_consts = BK_MAIN_EXECUTABLE_TABLE_INIT_PATTERN.consts(ipc, rom.boot_exe(), magic_table_init_offset)
+
+    engine_start_address = magic_table_consts["engine_start_address"].get_value()
+    engine_end_address   = magic_table_consts["engine_end_address"].get_value()
+    
+    engine_compressed_payload = rom.read_bytes(engine_start_address, engine_end_address-engine_start_address)
+    if engine_compressed_payload[0:2] != bytes([0x11, 0x72]):
+        logger.error("engine payload at 0x%08x in ROM did not start with 11 72 magic", engine_start_address)
+        return None
+    logger.info("compressed engine code in ROM at 0x%08x~0x%08x, decompressing it", engine_start_address, engine_end_address)
+    engine_decompressed_size = struct.unpack(">I", engine_compressed_payload[2:6])[0]
+    engine_payload = zlib.decompress(engine_compressed_payload[6:], wbits=-15)
+    if len(engine_payload) != engine_decompressed_size:
+        logger.error("decompressed engine size mismatch: expected %d, got %d", engine_decompressed_size, len(engine_payload))
+        return None
+
+    logger.info("decompressed engine code OK.")
+
     builder = BffiBuilder()
 
-    earliest_bss_address = 0x80800000
-    for bss_start_address,bss_end_address in preamble.bss_sections():
-        logger.info("bss section: 0x%08x~0x%08x", bss_start_address, bss_end_address)
-        bss_this_size = bss_end_address-bss_start_address
-        builder.bss(bss_start_address, bss_this_size)
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
 
-        if bss_start_address < earliest_bss_address:
-            earliest_bss_address = bss_start_address
+    logger.info("main BSS segment 0x%08x~0x%08x", main_bss_start, main_bss_end)
+    builder.bss(main_bss_start, main_bss_end-main_bss_start)
 
     builder.fix(ipc, rom.boot_exe()[:earliest_bss_address-ipc], segment_id=0)
     logger.info("fix segment with osInitialize and deflate routines: 0x%08x~0x%08x", ipc, earliest_bss_address)
@@ -101,6 +179,10 @@ def bk_unpack(rom: N64Rom, ipc: int):
     # so it *might* be okay to nuke the main bootloader stub and just use this instead
     # and yes i know there's a complete decomp available
     builder.seg(payload_target_address, payload)
+
+    # the engine segment should be dropped in RDRAM right after the main exe's bss segment.
+    # not sure if this is a fix segment or not, but its size is massive, so it might stay in RDRAM.
+    builder.seg(main_bss_end, engine_payload)
 
     # deflate() stub still has to run because the rare programmers put osInitialize() in it
     builder.initial_program_counter(preamble.crt_entry_point())

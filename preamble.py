@@ -29,6 +29,7 @@ call `osInitialize()`, but then they load more code segments before starting the
 
 import logging
 from signature import Signature,WILDCARD,SignatureBuilder
+from bffi import BffiBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -915,3 +916,29 @@ def identify_preamble(bootexe: bytearray, ipc: int) -> Preamble | None:
             return preamble
 
     return _identify_nonstandard_preamble(bootexe, ipc)
+
+
+def preamble_extract_bss_sections_to_bffi(preamble: Preamble, bffibuilder: BffiBuilder):
+    '''
+    Extracts BSS sections to a BffiBuilder and returns a tuple
+    containing earliest BSS segment address and total BSS segments size.
+    '''
+
+    bss_total_size = 0
+
+    # stupid "let's assume the game uses the expansion pak" assumption
+    # but .bss sections usually live in the first 4 mbytes of RDRAM
+    # so that the game can start without an expansionpak
+    earliest_bss_address = 0x80800000
+
+    for bss_start_address,bss_end_address in preamble.bss_sections():
+        logger.info("bss section: 0x%08x~0x%08x", bss_start_address, bss_end_address)
+        bss_this_size = bss_end_address-bss_start_address
+        bffibuilder.bss(bss_start_address, bss_this_size)
+
+        bss_total_size += bss_this_size
+
+        if bss_start_address < earliest_bss_address:
+            earliest_bss_address = bss_start_address
+
+    return earliest_bss_address, bss_total_size

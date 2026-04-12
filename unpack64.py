@@ -7,7 +7,7 @@ from n64rom import load_rom, load_rom_from_zip, N64Rom
 from n64cic import get_cic
 from games import GAME_SPECIFIC_UNPACKERS
 
-from preamble import identify_preamble, Preamble
+from preamble import identify_preamble, Preamble, preamble_extract_bss_sections_to_bffi
 
 
 logger = logging.getLogger(__name__)
@@ -59,21 +59,7 @@ def auto_unpack(rom: N64Rom) -> Bffi:
     bffibuilder.initial_stack_pointer(initial_stack_pointer)
     logger.info("initial stack pointer: 0x%08x", initial_stack_pointer)
 
-    bss_total_size = 0
-
-    # stupid "let's assume the game uses the expansion pak" assumption
-    # but .bss sections usually live in the first 4 mbytes of RDRAM
-    # so that the game can start without an expansionpak
-    earliest_bss_address = 0x80800000
-
-    for bss_start_address,bss_end_address in preamble.bss_sections():
-        logger.info("bss section: 0x%08x ~ 0x%08x", bss_start_address, bss_end_address)
-        bss_this_size = bss_end_address-bss_start_address
-        bss_total_size += bss_this_size
-        bffibuilder.bss(bss_start_address, bss_this_size)
-
-        if bss_start_address < earliest_bss_address:
-            earliest_bss_address = bss_start_address
+    earliest_bss_address, bss_total_size = preamble_extract_bss_sections_to_bffi(preamble, bffibuilder)
     
     if bss_total_size < 0x1000:
         logger.error("total BSS section size is below acceptable threshold (total size %d byte(s)), custom packer likely used. stopping.",bss_total_size)
