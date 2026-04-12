@@ -4,7 +4,7 @@ Game-specific unpacker drivers.
 
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
-from .rare import bk_unpack
+from .rare import bk_unpack, blastcorps_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
 from .ubisoft import ray2us_unpack
@@ -99,7 +99,7 @@ GAME_SPECIFIC_UNPACKERS = {
     "9e67bc574e40ef273759d587972655003d5213e625bfa68d3071dc9782d2071c": extremeg_unpack,
 
     # ------------------------------------------------------
-    # Rareware deflate() unpacker
+    # Rareware DEFLATE-based unpacker (zlib or gzip)
     # ------------------------------------------------------
 
     # Banjo-Kazooie (U) (v1.0) [!]
@@ -110,6 +110,18 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Banjo-Kazooie (E) (M3) [!]
     "d4e7534d8bcdc329386bf28dcb86e35136e793622f3e6913342500d17e89a931": bk_unpack,
+
+    # Blast Corps (U) (V1.0) [!]
+    "902769f9d27d888a35d8bdbec88ae9f4f3f33583323475678e99b6456eeaa6f5": blastcorps_unpack,
+
+    # Blast Corps (U) (V1.1) [!]
+    "42e4d8cde3c106637a25bbfa62d74cc2e5c1eed1d64de5bbb0b1c4896b185927": blastcorps_unpack,
+
+    # Blast Corps (E) (M2) [!]
+    "9a9246c1128ae4e1cfc6b9b0137894a9575202ce9cd62bf4b9405fb0cdfbd506": blastcorps_unpack,
+
+    # Blast Dozer (J) [!]
+    "88b8ab9ea99dd0d226c3699d1386c7e4b3253ce0b4ab1d298855a4c82bd28229": blastcorps_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

@@ -6,6 +6,7 @@ GEDecompressor used as primary reference here
 import struct
 import logging
 import zlib
+import gzip
 
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from n64rom import N64Rom
@@ -187,5 +188,90 @@ def bk_unpack(rom: N64Rom, ipc: int):
     # deflate() stub still has to run because the rare programmers put osInitialize() in it
     builder.initial_program_counter(preamble.crt_entry_point())
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
+
+    return builder.build()
+
+# ---------------------------------------------------------------
+#
+# Blast Corps
+# Standard gzip
+#
+# ---------------------------------------------------------------
+
+BLASTCORPS_BOOTLOADER_DECOMPRESS_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xc0,             # +0x00 addiu sp,sp,-0x40
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x04 jal   FUN_80220c40  <-- osInitialize() or something like it
+        0x00, 0x80, 0xe0, 0x25,             # +0x08 _or   gp,a0,zero
+        0x3c, 0x05, WILDCARD, WILDCARD,     # +0x0C lui   a1,0x78       <-- start of main code gzip
+        0x3c, 0x07, WILDCARD, WILDCARD,     # +0x10 lui   a3,0x7e       <-- end of main code gzip
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x14 addiu a1,a1,0x7fd0
+        0x3c, 0x06, WILDCARD, WILDCARD,     # +0x18 lui   a2,0x8000     <-- where it gets dumped in RDRAM
+        0x24, 0xe7, WILDCARD, WILDCARD,     # +0x1C addiu a3,a3,0x3bf0
+        0x24, 0x04, 0x00, 0x00,             # +0x20 li    a0,0x0
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x24 ori   a2,a2,0x400
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal   FUN_80220e70  <-- start PI DMA
+        0x00, 0xe5, 0x38, 0x22,             # +0x2C _sub  a3,a3,a1
+
+        # spin until DMA done
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x30 jal   FUN_80220f50
+        0x00, 0x00, 0x00, 0x00,             # +0x34 _nop
+        0x30, 0x42, 0x00, 0x01,             # +0x38 andi  v0,v0,0x1
+        0x14, 0x40, 0xff, 0xfc,             # +0x3C bne   v0,zero,LAB_80220760
+        0x00, 0x00, 0x00, 0x00,             # +0x40 _nop
+
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x44 lui   a0,0x8000
+        0x3c, 0x05, WILDCARD, WILDCARD,     # +0x48 lui   a1,0x8024     <-- decompress location in RDRAM
+        0x3c, 0x06, WILDCARD, WILDCARD,     # +0x4C lui   a2,0x801e
+        0x34, 0x84, WILDCARD, WILDCARD,     # +0x50 ori   a0,a0,0x400
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x54 ori   a1,a1,0x47c0
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x5C ori   a2,a2,0x7000
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x60 jal   FUN_80220998  <-- gzip decompress
+    ]) \
+    .const_op32_hi16("payload_rom_start", 0x0C) \
+    .const_op32_lo16("payload_rom_start", 0x14) \
+    .const_op32_hi16("payload_rom_end",   0x10) \
+    .const_op32_lo16("payload_rom_end",   0x1C) \
+    .const_op32_hi16("payload_target_address",  0x48) \
+    .const_op32_lo16("payload_target_address",  0x54) \
+    .build()
+
+def blastcorps_unpack(rom: N64Rom, ipc: int):
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    if BLASTCORPS_BOOTLOADER_DECOMPRESS_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
+        return None
+
+    logger.info("found Blast Corps gzip unpacker stub")
+
+    consts = BLASTCORPS_BOOTLOADER_DECOMPRESS_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
+
+    payload_target_address = consts["payload_target_address"].get_value()
+    payload_rom_start = consts["payload_rom_start"].get_value()
+    payload_rom_end   = consts["payload_rom_end"].get_value()
+
+    logger.info("main executable code is in gzip in ROM at 0x%08x~0x%08x, loads to 0x0%08x",
+                payload_rom_start,
+                payload_rom_end,
+                payload_target_address)
+    
+    gzipped_payload = rom.read_bytes(payload_rom_start, payload_rom_end-payload_rom_start)
+    payload = gzip.decompress(gzipped_payload)
+
+    logger.info("decompressed payload OK")
+
+    builder = BffiBuilder()
+
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+
+    builder.fix(ipc, rom.boot_exe()[:earliest_bss_address-ipc], segment_id=0)
+    logger.info("fix segment with osInitialize and deflate routines: 0x%08x~0x%08x", ipc, earliest_bss_address)
+
+    builder.fix(payload_target_address, payload, segment_id=1)
+
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
 
     return builder.build()
