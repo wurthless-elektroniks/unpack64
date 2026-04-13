@@ -4,7 +4,7 @@ Game-specific unpacker drivers.
 
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
-from .rare import bk_unpack, blastcorps_unpack
+from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack
 from .ubisoft import ray2us_unpack
@@ -122,6 +122,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Blast Dozer (J) [!]
     "88b8ab9ea99dd0d226c3699d1386c7e4b3253ce0b4ab1d298855a4c82bd28229": blastcorps_unpack,
+
+    # Donkey Kong 64 (U) [!]
+    "b6347d9f1f75d38a88d829b4f80b1acf0d93344170a5fbe9546c484dae416ce3": dk64us_unpack,
+
+    # Donkey Kong 64 (J) [!]
+    "8a6a5b48b0a4d5d31fa59608e65bafe787b8664fbc9dbaecbcce16e41e8934cd": dk64jp_unpack,
+
+    # Donkey Kong 64 (E) [!]
+    "f704ddc06dda5bee065dd89adcf86aa58bd817684e190094cd0776c0cabba9df": dk64jp_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

@@ -48,7 +48,7 @@ class BffiSectionType(Enum):
     Code overlay segments, not always loaded; to be loaded later while the game is running.
     '''
 
-    COPY = 0x05
+    COPY = 0x04
     '''
     Explicit memory copy operation. Copies data from a source to destination address.
     Sarge's Heroes does this to copy `osMemSize` at 0x80000318 to a higher address; in practice
@@ -63,6 +63,11 @@ class BffiSectionType(Enum):
     The order-of-operations is not preserved here because it isn't expected that we'll be moving
     memory much during initialization. The BSS and code segment loaders should have taken
     care of memory initialization for us.
+    '''
+
+    IGP = 0x05
+    '''
+    Initial Global Pointer value. Not used by most games.
     '''
 
     ISP = 0x06
@@ -421,6 +426,7 @@ class Bffi(object):
         
         self._ipc = 0
         self._initial_sp = 0
+        self._initial_gp = None
         
         self._tlb: BffiTlb = None
         self._bss_sections: dict[int,BffiBssSegment] = {}
@@ -480,6 +486,9 @@ class Bffi(object):
             queued_headers.append(_serialize_section_type_with_single_u32(BffiSectionType.IPC, self._ipc))
         else:
             logger.warning("BIG PROBLEM: BFFI serialized without entry point!")
+
+        if self._initial_gp is not None:
+            queued_headers.append(_serialize_section_type_with_single_u32(BffiSectionType.IGP, self._initial_gp))
 
         # queue explicit EOF too for tools that need it
         queued_headers.append(_serialize_section_type_only(BffiSectionType.EOF))
@@ -604,6 +613,7 @@ class BffiBuilder(object):
     def __init__(self):
         self._ipc = 0
         self._initial_sp = 0
+        self._initial_gp = None
         self._rom_hash = bytes([0] * 32)
 
         # loaded once
@@ -729,6 +739,10 @@ class BffiBuilder(object):
         self._ipc = virtual_address
         return self
 
+    def initial_global_pointer(self, virtual_address: int):
+        self._initial_gp = virtual_address
+        return self
+
     def initial_stack_pointer(self, virtual_address: int):
         self._initial_sp = virtual_address
         return self
@@ -738,6 +752,7 @@ class BffiBuilder(object):
 
         bffi._initial_sp = self._initial_sp
         bffi._ipc = self._ipc
+        bffi._initial_gp = self._initial_gp
         bffi._rom_hash = self._rom_hash
 
         bffi._fix_sections = self._fix_segments

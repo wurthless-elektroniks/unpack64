@@ -298,6 +298,237 @@ def blastcorps_unpack(rom: N64Rom, ipc: int):
 #
 # ---------------------------------------------------------------
 
+DK64_U_IDLETHREAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x0e, 0x80, 0x00,         # +0x00 lui        t6,0x8000
+        0x8d, 0xce, 0x03, 0x18,         # +0x04 lw         t6,offset DAT_80000318(t6) <-- osMemSize
+        0x3c, 0x01, 0x00, 0x80,         # +0x08 lui        at,0x80
+        0x3c, 0x0f, 0x80, 0x00,         # +0x0C lui        t7,0x8000
+        0x01, 0xc1, 0x08, 0x2b,         # +0x10 sltu       at,t6,at
+        0x14, 0x20, 0x00, 0x06,         # +0x14 bne        at,zero,LAB_800006b0       <-- expansionpak not present path
+        0x3c, 0x02, WILDCARD, WILDCARD, # +0x18 _lui       v0,0x8001
+        0x8d, 0xef, 0x03, 0x00,         # +0x1C lw         t7,offset DAT_80000300(t7) <-- no idea what this is
+        0x3c, 0x04, WILDCARD, WILDCARD, # +0x20 lui        a0,0x1                     <-- a0 = small uncompressed code section
+        0x24, 0x84, WILDCARD, WILDCARD, # +0x24 addiu      a0,a0,0x1320
+        0x15, 0xe0, 0x00, 0x0b,         # +0x28 bne        t7,zero,LAB_800006d8       <-- happy path if this is taken
+        0x3c, 0x05, WILDCARD, WILDCARD, # +0x2C _lui       a1,0x1                     <-- a1 = end of code section
+
+        # "expansionpak not present" path
+        # we don't care about the resources being setup here, we're skipping over this entirely
+        0x3c, 0x08, WILDCARD, WILDCARD,     # +0x30 lui   t0,0x10
+        0x3c, 0x09, WILDCARD, WILDCARD,     # +0x34 lui   t1,0x189
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x38 addiu v0,v0,-0x233c
+        0x25, 0x29, WILDCARD, WILDCARD,     # +0x3C addiu t1,t1,-0x50e0
+        0x25, 0x08, WILDCARD, WILDCARD,     # +0x40 addiu t0,t0,0x1c50
+        0xac, 0x48, WILDCARD, WILDCARD,     # +0x44 sw    t0,0x108(v0)=>DAT_8000ddcc
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x48 jal   FUN_80000a30
+        0xac, 0x49, WILDCARD, WILDCARD,     # +0x4C _sw   t1,0x10c(v0)=>DAT_8000ddd0
+        0x10, 0x00, 0x00, 0x9e,             # +0x50 b     LAB_8000094c
+        0x00, 0x00, 0x00, 0x00,             # +0x54 _nop
+
+        # happy path: load/decompress initial code overlays,
+        # setup magic table, and start the game
+        0x3c, 0x06, 0x80, WILDCARD,          # +0x58 lui        a2,0x805f     <-- where to copy small uncompressed section
+        0x34, 0xc6, WILDCARD, WILDCARD,      # +0x5C ori        a2,a2,0xb000
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # +0x60 jal        FUN_80000450
+        0x24, 0xa5, WILDCARD, WILDCARD,      # +0x64 _addiu     a1,a1,0x13f0  <-- lo16 end of uncompressed section (finally!)
+
+        # brief intermission to set audio sample rate to 22050 Hz
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # +0x68 jal        FUN_80005070
+        0x24, 0x04, 0x56, 0x22,              # +0x6C _li        a0,0x5622
+
+        # okay, back to the task at hand: decompressing the main executable.
+        # first clear about 2 MB of RAM where we're about to dump all this crap
+        0x3c, 0x01, WILDCARD, WILDCARD,      # +0x70 lui        at,0x8001
+        0x3c, 0x04, WILDCARD, WILDCARD,      # +0x74 lui        a0,0x805f      <-- a0 = start of code section
+        0x3c, 0x05, WILDCARD, WILDCARD,      # +0x78 lui        a1,0x20        <-- a1 = size of memzero() operation in bytes
+        0xac, 0x22, WILDCARD, WILDCARD,      # +0x7C sw         v0,-0x234c(at)
+        0x34, 0xa5, WILDCARD, WILDCARD,      # +0x80 ori        a1,a1,0x4d00
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # +0x84 jal        FUN_800051c0   <-- memzero() function
+        0x34, 0x84, WILDCARD, WILDCARD,      # +0x88 _ori       a0,a0,0xb300
+
+        # copy gzipped payload to RAM and decompress it
+        0x3c, 0x0a, WILDCARD, WILDCARD,      # +0x8C lui        t2,0x805f      <-- t2 is where we drop the uncompressed code
+        0x3c, 0x06, WILDCARD, WILDCARD,      # +0x90 lui        a2,0x8002      <-- a2 is where we cache the compressed code
+        0x35, 0x4a, WILDCARD, WILDCARD,      # +0x94 ori        t2,t2,0xb300
+        0x3c, 0x04, WILDCARD, WILDCARD,      # +0x98 lui        a0,0x1         <-- a0 = gzip payload start address in ROM
+        0x3c, 0x05, WILDCARD, WILDCARD,      # +0x9C lui        a1,0xd         <-- a1 = gzip payload end address in ROM
+        0xaf, 0xa6, 0x00, 0x34,              # +0xA0 sw         a2,0x34(sp)
+        0xaf, 0xaa, 0x00, 0x30,              # +0xA4 sw         t2,0x30(sp)
+        0x24, 0xa5, WILDCARD, WILDCARD,      # +0xA8 addiu      a1,a1,-0x4190
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # +0xAC jal        FUN_80000450
+        0x24, 0x84, WILDCARD, WILDCARD,      # +0xB0 _addiu     a0,a0,0x13f0
+    ]) \
+    .const_op32_hi16("small_segment_start", 0x20) \
+    .const_op32_lo16("small_segment_start", 0x24) \
+    .const_op32_hi16("small_segment_end", 0x2C) \
+    .const_op32_lo16("small_segment_end", 0x64) \
+    .const_op32_hi16("small_segment_load_address", 0x58) \
+    .const_op32_lo16("small_segment_load_address", 0x5C) \
+    .const_op32_hi16("code_section_bss_address", 0x74) \
+    .const_op32_lo16("code_section_bss_address", 0x88) \
+    .const_op32_hi16("code_section_bss_size", 0x78) \
+    .const_op32_lo16("code_section_bss_size", 0x80) \
+    .const_op32_hi16("code_section_load_address", 0x8C) \
+    .const_op32_lo16("code_section_load_address", 0x94) \
+    .const_op32_hi16("code_section_gz_rom_start", 0x98) \
+    .const_op32_lo16("code_section_gz_rom_start", 0xB0) \
+    .const_op32_hi16("code_section_gz_rom_end",   0x9C) \
+    .const_op32_lo16("code_section_gz_rom_end",   0xA8) \
+    .build()
+
+# compiler optimizations and code differences mean a different pattern is needed
+# for the japanese and european versions
+DK64_J_IDLETHREAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        # we pick up just after the memory check
+        0x11, 0xc0, 0x00, 0x0c,         # +0x00 beq        t6,zero,LAB_80000788
+        0x3c, 0x04, WILDCARD, WILDCARD, # +0x04 _lui       a0,0x1
+
+        # unhappy path: display "expansion pak not found" message and stop
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x08 lui   v0,0x8001
+        0x3c, 0x08, WILDCARD, WILDCARD,     # +0x0C lui   t0,0x10
+        0x3c, 0x09, WILDCARD, WILDCARD,     # +0x10 lui   t1,0x189
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x14 addiu v0,v0,-0x20cc
+        0x25, 0x29, WILDCARD, WILDCARD,     # +0x18 addiu t1,t1,-0x2500
+        0x25, 0x08, WILDCARD, WILDCARD,     # +0x1C addiu t0,t0,0x39c0
+        0xac, 0x48, WILDCARD, WILDCARD,     # +0x20 sw    t0,0x108(v0)=>DAT_8000e03c
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x24 jal   FUN_80000ad0
+        0xac, 0x49, WILDCARD, WILDCARD,     # +0x28 _sw   t1,0x10c(v0)=>DAT_8000e040
+        0x10, 0x00, WILDCARD, WILDCARD,     # +0x2C b     LAB_80000a04
+        0x00, 0x00, 0x00, 0x00,             # +0x30 _nop
+
+        # happy path
+        # copy the small uncompressed section to memory
+        0x3c, 0x05, WILDCARD, WILDCARD,     # +0x34 lui    a1,0x1
+        0x3c, 0x06, WILDCARD, WILDCARD,     # +0x38 lui    a2,0x805f
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x3C ori    a2,a2,0x8800
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x40 addiu  a1,a1,0x16f0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x44 jal    FUN_800004cc
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x48 _addiu a0,a0,0x1620
+
+        # set sampling rate to 22050 Hz
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x4C jal FUN_800052e0
+        0x24, 0x04, 0x56, 0x22,             # +0x50 _li a0,0x5622
+        
+        # clear memory range where we're dropping the main code segment
+        0x3c, 0x01, WILDCARD, WILDCARD,     # +0x54 lui  at,0x8001
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x58 lui  a0,0x805f
+        0x3c, 0x05, WILDCARD, WILDCARD,     # +0x5C lui  a1,0x20
+        0xac, 0x22, WILDCARD, WILDCARD,     # +0x60 sw   v0,-0x20dc(at)=>DAT_8000df24
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x64 ori  a1,a1,0x7500
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x68 jal  FUN_80005430
+        0x34, 0x84, WILDCARD, WILDCARD,     # +0x6C _ori a0,a0,0x8b00
+        
+        # read the compressed payload into RDRAM and unpack it
+        0x3c, 0x0a, WILDCARD, WILDCARD,     # +0x70 lui        t2,0x805f
+        0x3c, 0x06, WILDCARD, WILDCARD,     # +0x74 lui        a2,0x8002
+        0x35, 0x4a, WILDCARD, WILDCARD,     # +0x78 ori        t2,t2,0x8b00
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x7C lui        a0,0x1
+        0x3c, 0x05, WILDCARD, WILDCARD,     # +0x80 lui        a1,0xd
+        0xaf, 0xa6, WILDCARD, WILDCARD,     # +0x84 sw         a2,0x3c(sp)
+        0xaf, 0xaa, WILDCARD, WILDCARD,     # +0x88 sw         t2,0x38(sp)
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x8C addiu      a1,a1,-0x27c0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x90 jal        FUN_800004cc
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x94 _addiu     a0,a0,0x16f0
+    ]) \
+    .const_op32_hi16("small_segment_start", 0x04) \
+    .const_op32_lo16("small_segment_start", 0x48) \
+    .const_op32_hi16("small_segment_end", 0x34) \
+    .const_op32_lo16("small_segment_end", 0x40) \
+    .const_op32_hi16("small_segment_load_address", 0x38) \
+    .const_op32_lo16("small_segment_load_address", 0x3C) \
+    .const_op32_hi16("code_section_bss_address", 0x58) \
+    .const_op32_lo16("code_section_bss_address", 0x6C) \
+    .const_op32_hi16("code_section_bss_size", 0x5C) \
+    .const_op32_lo16("code_section_bss_size", 0x64) \
+    .const_op32_hi16("code_section_load_address", 0x70) \
+    .const_op32_lo16("code_section_load_address", 0x78) \
+    .const_op32_hi16("code_section_gz_rom_start", 0x7C) \
+    .const_op32_lo16("code_section_gz_rom_start", 0x94) \
+    .const_op32_hi16("code_section_gz_rom_end",   0x80) \
+    .const_op32_lo16("code_section_gz_rom_end",   0x8C) \
+    .build()
+
+def dk64_common_unpack(rom: N64Rom, ipc: int, consts: dict) -> Bffi:
+    logger.info("now identifying preamble...")
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    builder = BffiBuilder()
+
+    builder.required_memory_size(8)
+
+    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    builder.fix(ipc, rom.boot_exe()[:earliest_bss_section-ipc], segment_id=0)
+    
+    small_segment_start         = consts["small_segment_start"].get_value()
+    small_segment_end           = consts["small_segment_end"].get_value()
+    small_segment_load_address  = consts["small_segment_load_address"].get_value()
+    code_section_bss_address = consts["code_section_bss_address"].get_value()
+    code_section_bss_size    = consts["code_section_bss_size"].get_value()
+    code_section_load_address = consts["code_section_load_address"].get_value()
+    code_section_gz_rom_start = consts["code_section_gz_rom_start"].get_value()
+    code_section_gz_rom_end = consts["code_section_gz_rom_end"].get_value()
+
+    logger.info("small segment loads from ROM 0x%08x~0x%08x -> RDRAM 0x%08x",
+                small_segment_start,
+                small_segment_end,
+                small_segment_load_address)
+    
+    builder.fix(small_segment_load_address,
+                rom.read_bytes(small_segment_start,small_segment_end-small_segment_start),
+                segment_id=1)
+    
+    logger.info("main code section BSS: 0x%08x~0x%08x", code_section_bss_address, code_section_bss_size+code_section_bss_address)
+    builder.bss(code_section_bss_address, code_section_bss_size)
+
+    logger.info("main code gzip payload in ROM at 0x%08x~0x%08x, loads to 0x%08x",
+                code_section_gz_rom_start,
+                code_section_gz_rom_end,
+                code_section_load_address)
+    
+    gzipped_payload = rom.read_bytes(code_section_gz_rom_start, code_section_gz_rom_end-code_section_gz_rom_start)
+    payload = gzip.decompress(gzipped_payload)
+
+    logger.info("decompressed main payload OK")
+
+    builder.fix(code_section_load_address, payload, segment_id=2)
+
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    return builder.build()
+
+def dk64us_unpack(rom: N64Rom, ipc: int) -> Bffi:
+
+    # dk64 only starts loading code segments to RAM after the idle thread starts.
+    idlethread_pos = DK64_U_IDLETHREAD_PATTERN.find(rom.boot_exe()[:0x2000])
+    if idlethread_pos is None:
+        logger.error("idlethread not found")
+        return None
+
+    logger.info("found dk64 US unpacker")
+
+    logger.info("idle thread code is at 0x%08x", ipc + idlethread_pos)
+    consts = DK64_U_IDLETHREAD_PATTERN.consts(ipc, rom.boot_exe(), idlethread_pos)
+
+    return dk64_common_unpack(rom, ipc, consts)
+
+def dk64jp_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    # dk64 only starts loading code segments to RAM after the idle thread starts.
+    idlethread_pos = DK64_J_IDLETHREAD_PATTERN.find(rom.boot_exe()[:0x2000])
+    if idlethread_pos is None:
+        logger.error("idlethread not found")
+        return None
+    
+    logger.info("found dk64 JP/EU unpacker")
+
+    logger.info("idle thread code is at 0x%08x", ipc + idlethread_pos)
+    consts = DK64_J_IDLETHREAD_PATTERN.consts(ipc, rom.boot_exe(), idlethread_pos)
+
+    return dk64_common_unpack(rom, ipc, consts)
+
 # ---------------------------------------------------------------
 #
 # Banjo-Tooie
