@@ -15,7 +15,7 @@ Examples that also use the TLB:
 import logging
 import struct
 
-from compression.rnc import rnc_unpack
+from compression.rnc import rnc_unpack, crc16
 from preamble import identify_preamble
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
@@ -406,7 +406,14 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("payload compressed size is %d byte(s)", payload_compressed_size)
     payload = rom.read_bytes(payload_rom_address, 18 + payload_compressed_size)
 
-    # FIXME: NBA Jam 2000 (E) fails CRC16 on input data
+    # HACK: NBA Jam 2000 (E) [!] has an invalid payload CRC16,
+    # so we recalculate it here so that check always passes
+    if rom.sha256() == "76778e298da9b3929c1659c2374d19df1d542fb2db89ff5be7d53c7dfa267fca":
+        logger.info("NBA Jam 2000 PAL detected, forcing RNC payload CRC recalc")
+        fixed_crc = crc16(payload, 18, payload_compressed_size)
+        logger.info("fixed CRC-16 is %04x", fixed_crc)
+        payload = bytearray(payload)
+        payload[14:16] = struct.pack(">H", fixed_crc)
 
     logger.info("Unpacking RNC payload...")
     payload = rnc_unpack(payload)
