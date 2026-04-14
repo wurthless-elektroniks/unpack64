@@ -8,6 +8,7 @@ Examples:
 
 Examples that also use the TLB:
 - All-Star Baseball 2000 (uses same TLB init block as Re-Volt)
+- NBA Jam 2000 (integrates TLB init into the RNC unpacker stub)
 
 '''
 
@@ -17,7 +18,7 @@ import struct
 from compression.rnc import rnc_unpack
 from preamble import identify_preamble
 from n64rom import N64Rom
-from bffi import Bffi,BffiBuilder,BffiSectionType
+from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
 from mips import disassemble_jump_imm26_target
 
@@ -186,7 +187,7 @@ ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .pattern([
         0x27, 0xbd, 0xff, 0xe0,             # +0x00 addiu  sp,sp,-0x20
         0xaf, 0xbf, 0x00, 0x1c,             # +0x04 sw     ra,local_4(sp)
-        0x0c, 0x00, WILDCARD, WILDCARD,     # +0x08 jal    FUN_80017c18    <-- another BSS section clear-er
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x08 jal    FUN_80017c18    <-- another BSS section clear-er
         0xaf, 0xb0, 0x00, 0x18,             # +0x0C _sw    s0,local_8(sp)
         0x3c, 0x03, 0x80, WILDCARD,         # +0x10 lui    v1,0x8006       <-- BSS start
         0x24, 0x63, WILDCARD, WILDCARD,     # +0x14 addiu  v1,v1,0x7770
@@ -264,4 +265,186 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.fix(entry_point, payload, segment_id=1)
     builder.initial_program_counter(real_crt_startup_location)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    return builder.build()
+
+# ------------------------------------------------------------------------------------------
+#
+# NBA Jam 2000
+#
+# Boot stub starts by writing some magic values somewhere.
+# Then it initializes TLB by unmapping entries 0x00~0x1E, then maps page 0x1F.
+# The main payload is decompressed to low RAM and is executed.
+#
+# ------------------------------------------------------------------------------------------
+
+NBAJAM2K_BOOT_PATTERN = SignatureBuilder() \
+    .pattern([
+        # copy some values (probably ROM pointers) to where the main code segment
+        # can read them
+        0x27, 0xbd, 0xff, 0xd8,         # +0x00 addiu      sp,sp,-0x28
+        0x3c, 0x02, WILDCARD, WILDCARD, # +0x04 lui        v0,0x0
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x08 addiu      v0,v0,0x79e8
+        0x3c, 0x01, 0x80, 0x00,         # +0x0C lui        at,0x8000
+        0xac, 0x22, 0x03, 0x5c,         # +0x10 sw         v0,offset DAT_8000035c(at)
+        0x3c, 0x02, WILDCARD, WILDCARD, # +0x14 lui        v0,0x1
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x18 addiu      v0,v0,-0x66f8
+        0xaf, 0xb0, 0x00, 0x18,         # +0x1C sw         s0,local_10(sp)
+        0x3c, 0x10, WILDCARD, WILDCARD, # +0x20 lui        s0,0xe9
+        0x26, 0x10, WILDCARD, WILDCARD, # +0x24 addiu      s0,s0,-0x42a0
+        0x3c, 0x01, 0x80, 0x00,         # +0x28 lui        at,0x8000
+        0xac, 0x22, 0x03, 0x60,         # +0x2C sw         v0,offset DAT_80000360(at)
+        0x3c, 0x02, WILDCARD, WILDCARD, # +0x30 lui        v0,0xf6
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x34 addiu      v0,v0,0x1a38
+        0xaf, 0xbf, 0x00, 0x20,         # +0x38 sw         ra,local_8(sp)
+        0xaf, 0xb1, 0x00, 0x1c,         # +0x3C sw         s1,local_c(sp)
+        0x3c, 0x01, 0x80, 0x00,         # +0x40 lui        at,0x8000
+        0xac, 0x30, 0x03, 0x64,         # +0x44 sw         s0,offset DAT_80000364(at)
+        0x3c, 0x01, 0x80, 0x00,         # +0x48 lui        at,0x8000
+        0xac, 0x22, 0x03, 0x68,         # +0x4C sw         v0,offset DAT_80000368(at)
+
+        # init TLB 0x00-0x1E
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x50 jal        FUN_80303060
+        0x00, 0x00, 0x00, 0x00,             # +0x54 _nop
+
+        # init TLB entry 0x1F
+        # (assumed to be the same across all builds)
+        0x24, 0x04, 0x00, 0x1f,             # +0x58 li         a0,0x1f
+        0x3c, 0x05, 0x00, 0x1f,             # +0x5C lui        a1,0x1f
+        0x34, 0xa5, 0xe0, 0x00,             # +0x60 ori        a1,a1,0xe000
+        0x00, 0x00, 0x30, 0x21,             # +0x64 clear      a2
+        0x24, 0x07, 0xff, 0xff,             # +0x68 li         a3,-0x1
+        0x24, 0x02, 0xff, 0xff,             # +0x6C li         v0,-0x1
+        0xaf, 0xa0, 0x00, 0x10,             # +0x70 sw         zero,local_18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x74 jal        FUN_80302f40
+        0xaf, 0xa2, 0x00, 0x14,             # +0x78 _sw        v0,local_14(sp)
+        
+        # setup pointer to RNC packed main code block
+        0x3c, 0x11, WILDCARD, WILDCARD, # +0x7C lui        s1,0xe6
+        0x26, 0x31, WILDCARD, WILDCARD, # +0x80 addiu      s1,s1,-0x6538
+    ]) \
+    .const_op32_hi16("data_35c", 0x04) \
+    .const_op32_lo16("data_35c", 0x08) \
+    .const_op32_hi16("data_360", 0x14) \
+    .const_op32_lo16("data_360", 0x18) \
+    .const_op32_hi16("data_364", 0x20) \
+    .const_op32_lo16("data_364", 0x24) \
+    .const_op32_hi16("data_368", 0x30) \
+    .const_op32_lo16("data_368", 0x34) \
+    .const_op32_hi16("payload_rom_address", 0x7C) \
+    .const_op32_lo16("payload_rom_address", 0x80) \
+    .build()
+
+NBAJAM2K_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, WILDCARD, WILDCARD, # lui        a0,0x13
+        0x24, 0x84, WILDCARD, WILDCARD, # addiu      a0,a0,0x53f0
+        0x00, 0x80, 0xf8, 0x09,         # jalr       a0=>SUB_001353f0
+    ]) \
+    .const_op32_hi16("entrypoint", 0) \
+    .const_op32_lo16("entrypoint", 4) \
+    .build()
+
+
+def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    if NBAJAM2K_BOOT_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
+        return None
+    
+    logger.info("found NBA Jam 2000 TLB mapper and RNC unpacker")
+
+    builder = BffiBuilder()
+
+    tlb = BffiTlb()
+    for i in range(0,0x1F):
+        entry = BffiTlbEntry()
+        entry.pagemask(0)
+        entry.entryhi(0x80000000)
+        entry.entrylo0(0)
+        entry.entrylo1(0)
+
+        tlb.entry(i, entry)
+    
+    entry1f = BffiTlbEntry()
+    entry1f.pagemask(0x1fe000)
+    entry1f.entryhi(0)
+    entry1f.entrylo0(1)
+    entry1f.entrylo1(0x1F)
+    tlb.entry(0x1F, entry1f)
+
+    builder.initial_tlb(tlb)
+
+    consts = NBAJAM2K_BOOT_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
+    
+    data_35c = consts["data_35c"].get_value()
+    data_360 = consts["data_360"].get_value()
+    data_364 = consts["data_364"].get_value()
+    data_368 = consts["data_368"].get_value()
+
+    payload_rom_address = consts["payload_rom_address"].get_value()
+    
+    logger.info(\
+"""magic values table as follows:
+    0x8000035c = %08x
+    0x80000360 = %08x
+    0x80000364 = %08x
+    0x80000368 = %08x
+""",data_35c,data_360,data_364,data_368)
+    
+    magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
+    builder.fix(0x8000035c, magic_values, segment_id=0)
+
+    logger.info("RNC payload in ROM at 0x%08x, checking it.", payload_rom_address)
+    if rom.read_bytes(payload_rom_address, 4) != b'RNC\x01':
+        logger.error("payload does not use RNC type 1 compression")
+        return None
+
+    payload_compressed_size = struct.unpack(">I", rom.read_bytes(payload_rom_address + 8, 4))[0]
+    
+    logger.info("payload compressed size is %d byte(s)", payload_compressed_size)
+    payload = rom.read_bytes(payload_rom_address, 18 + payload_compressed_size)
+
+    # FIXME: NBA Jam 2000 (E) fails CRC16 on input data
+
+    logger.info("Unpacking RNC payload...")
+    payload = rnc_unpack(payload)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    if NBAJAM2K_ENTRY_POINT_PATTERN.compare(payload) is False:
+        logger.error("entry point in payload didn't match expected")
+        return None
+    
+    entrypoint = NBAJAM2K_ENTRY_POINT_PATTERN.consts(0x00100000, payload)["entrypoint"].get_value()
+    if tlb.virtual_to_physical(entrypoint) is None:
+        logger.error("TLB configuration is bad! entry point %08x is not mapped!", entrypoint)
+        return None
+    
+    logger.info("real executable entry point is 0x%08x", entrypoint)
+
+    # TODO: kill hardcoding here
+    builder.fix(0x80000400, payload, segment_id=1)
+
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entrypoint)
+
+    # main code segment immediately jumps to TLB-mapped space,
+    # where we find code that's almost identical to Allstar Baseball '99,
+    # which clears the BSS space and starts the game.
+    # we can reuse that signature to grab the BSS space
+    if ALLSTAR99_REAL_ENTRY_POINT_PATTERN.compare(payload, entrypoint - 0x100400) is False:
+        logger.error("code at entrypoint was not the BSS init code we expected...")
+        return None
+
+    bssconsts = ALLSTAR99_REAL_ENTRY_POINT_PATTERN.consts(0x100000, payload, entrypoint - 0x100400)
+    bss_start = bssconsts["bss_start"].get_value()
+    bss_end = bssconsts["bss_end"].get_value()
+    
+    logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
+    builder.bss(bss_start, bss_end-bss_start)
+
     return builder.build()

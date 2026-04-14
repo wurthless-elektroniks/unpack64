@@ -6,7 +6,7 @@ from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
-from .iguana import turok_unpack, allstar99_unpack
+from .iguana import turok_unpack, allstar99_unpack, nbajam2k_unpack
 from .ubisoft import ray2us_unpack
 from .tlb import tlb_try_detect_singleton
 
@@ -74,6 +74,12 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # All-Star Baseball '99 (E) [!]
     "94c4b3f6964109fe237e158ba5a659d5c05b14361f35f6c36a3e6583434782ef": allstar99_unpack,
+
+    # NBA Jam 2000 (U) [!]
+    "c41d5622e96280fb00d8c2f17a80fc5cf9520b4b209788a6240e152a1c88c540": nbajam2k_unpack,
+
+    # NBA Jam 2000 (E) [!]
+    "76778e298da9b3929c1659c2374d19df1d542fb2db89ff5be7d53c7dfa267fca": nbajam2k_unpack,
 
     # ------------------------------------------------------
     # 3DO / Sarge's Heroes games using a custom preamble

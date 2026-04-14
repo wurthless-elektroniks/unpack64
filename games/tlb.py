@@ -4,11 +4,18 @@ Common utility code for games that initialize the TLB prior to execution
 Rare games like Goldeneye and Perfect Dark only setup the TLB after the preamble runs,
 so this won't be of use there.
 
-Games that use a generic TLB stub and nothing else:
+Games that use a generic TLB stub:
 - Re-Volt: uses a bss init loop as well
 
 Games that need additional helper logic:
 - Allstar Baseball 2000: sets up TLB, but then uses RNC unpacker to decompress the boot executable
+- NBA Jam 2000: TLB logic is integrated in the RNC unpacker stub rather than the preamble,
+  but it's similar to the others. It unmaps pages 0x00~0x1E, then maps page 0x1F. Then it
+  unpacks the RNC payload.
+
+- South Park: normal TLB stuff followed by a CRT startup function that is very weird,
+  it copies the boot executable to RAM again and initializes its own BSS section before
+  it runs osInitialize() and starts the idle thread
 - Turok 2: sets up TLB and jumps to the entry point without initializing BSS
 
 '''
@@ -92,6 +99,16 @@ def _entrylo_page_base(entrylo: int, pagemask: int):
 # resulting mapping:
 # - 0x00200000~0x002FFFFF -> 0x80000000~0x800FFFFF
 # - 0x00300000~0x003FFFFF -> 0x80100000~0x801FFFFF
+#
+# NBA Jam 2000 uses the same function for setting up page 0x1F:
+# - pagemask 0x1FE000 (1mbytes pages),
+# - EntryLo flags = 7
+# - EntryHi  = 0
+# - EntryLo0 = -1 --> 0x00000001 (treat as global but map nothing there)
+# - EntryLo1 = 0  --> 0x0000001F
+# resulting mapping:
+#  0x00000000~0x000FFFFF -> wired, but illegal (writing here means bad things happen)
+#  0x00100000~0x001FFFFF -> 0x80000000~0x800FFFFF
 #
 
 NUSTD_TLB_INIT_PATTERN = SignatureBuilder() \
