@@ -96,6 +96,16 @@ class BffiSectionType(Enum):
     Set TLB cop0 Random register to this value.
     '''
 
+    TLB_WIRED = 0x0A
+    '''
+    Set TLB cop0 Wired register to this value.
+    '''
+
+    TLB_CONTEXT = 0x0B
+    '''
+    Set TLB cop0 Context register to this value.
+    '''
+
     TLB_UNMAP_RANGE = 0x0D
     '''
     Unmaps range of TLB entries from the current index,
@@ -277,19 +287,38 @@ class BffiTlbEntry(Finalizable):
 
 class BffiTlb(object):
     def __init__(self):
-        self._random_reg = 0
         self._entries: list[BffiTlbEntry] = [ None ] * 0x20
+
+        self._random_reg = None
+        self._wired_reg = None
+        self._context_reg = None
+
         self._final = False
 
     def _assert_not_final(self):
         if self._final:
             raise RuntimeError("TLB is finalized")
 
-    def random(self, new_random: int | None = None):
+    def random(self, new_random: int | None = None) -> int | None:
+        '''
+        Return cop0 Random register setting, or None if undefined.
+        '''
         if new_random is not None:
             self._assert_not_final()
             self._random_reg = new_random
         return self._random_reg
+    
+    def wired(self, new_wired: int | None = None) -> int | None:
+        if new_wired is not None:
+            self._assert_not_final()
+            self._wired_reg = new_wired
+        return self._wired_reg
+    
+    def context(self, new_context: int | None = None) -> int | None:
+        if new_context is not None:
+            self._assert_not_final()
+            self._context_reg = new_context
+        return self._context_reg
     
     def entry(self, index: int, new_entry: BffiTlbEntry | None = None) -> BffiTlbEntry | None:
         if new_entry is not None:

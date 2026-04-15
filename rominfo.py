@@ -3,6 +3,8 @@ from argparse import ArgumentParser, RawTextHelpFormatter
 import sys
 import logging
 
+
+from tlb import tlb_try_detect_preamble
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from n64rom import load_rom, load_rom_from_zip
 from n64cic import get_cic
@@ -62,11 +64,13 @@ f"""
     
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
-        print(\
+        _, preamble = tlb_try_detect_preamble(rom, ipc)
+        if preamble is None:
+            print(\
 f"""
         preamble unrecognized - further analysis impossible.
         first two bytes of preamble: {rom.boot_exe()[0]:02x} {rom.boot_exe()[1]:02x}""")
-        return
+            return
     
     print( \
 f"""

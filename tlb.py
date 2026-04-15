@@ -33,6 +33,36 @@ from preamble import identify_preamble, Preamble
 logger = logging.getLogger(__name__)
 
 
+
+def _ident_preamble_common(rom: N64Rom,
+                           ipc: int,
+                           tlb_init_loc: int,
+                           entry_point: int,
+                           tlb_type: str):
+    # now for one of the nastiest hacks of all time: identifying the preamble.
+    # this preamble looks like a nustd style preamble so what we'll do is copy all the
+    # code until the TLB init point, insert a fake jump/nop combo, and see what matches it.
+    logger.info("trying to identify preamble...")
+    preamble_stub = rom.boot_exe()[:tlb_init_loc] + bytes([0x0C, 0x00, 0x00, 0x00,
+                                                           0x00, 0x00, 0x00, 0x00
+                                                           ])
+
+    preamble = identify_preamble(preamble_stub, ipc)
+
+    if preamble is None:
+        return None
+    
+    new_preamble = Preamble(preamble.type() + " + TLB: " + tlb_type,
+                                preamble.initial_stack_pointer(),
+                                entry_point,
+                                (preamble.size() - 8) + len(preamble_stub),
+                                deep_trace_required=preamble.deep_trace_required())
+
+    for bss_start, bss_end in preamble.bss_sections():
+        new_preamble.add_bss(bss_start, bss_end)
+
+    return new_preamble
+
 # generic pattern, sans BSS init stuff, common to turok 2 and revolt.
 # clears TLB entries 0x00-0x1E and then initializes entry 0x1F
 # before calling the remapped entry point
@@ -84,7 +114,6 @@ logger = logging.getLogger(__name__)
 # resulting mapping:
 #  0x00000000~0x000FFFFF -> wired, but illegal (writing here means bad things happen)
 #  0x00100000~0x001FFFFF -> 0x80000000~0x800FFFFF
-#
 
 NUSTD_TLB_INIT_PATTERN = SignatureBuilder() \
     .pattern([
@@ -134,6 +163,7 @@ NUSTD_TLB_INIT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("entry_point", 0x70) \
     .build()
 
+
 def tlb_try_detect_singleton(rom: N64Rom,
                              ipc: int,
                              skip_identify_preamble: bool = False) -> tuple[BffiTlb, Preamble]:
@@ -155,7 +185,6 @@ def tlb_try_detect_singleton(rom: N64Rom,
     if pagemask not in PAGE_SIZE_LUT:
         logger.error("page size invalid")
         return None, None
-
 
     tlb = BffiTlb()
     for i in range(0,0x1F):
@@ -190,28 +219,76 @@ def tlb_try_detect_singleton(rom: N64Rom,
         return None, None
     logger.info("virtual address %08x -> physical address %08x", entry_point, real_entry_point)
 
-    # now for one of the nastiest hacks of all time: identifying the preamble.
-    # this preamble looks like a nustd style preamble so what we'll do is copy all the
-    # code until the TLB init point, insert a fake jump/nop combo, and see what matches it.
-    logger.info("trying to identify preamble...")
-    preamble_stub = rom.boot_exe()[:tlb_init_loc] + bytes([0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-    
-    preamble = identify_preamble(preamble_stub, ipc)
-
-    if preamble is None:
-        if skip_identify_preamble is False:
+    preamble = _ident_preamble_common(rom,
+                                      ipc,
+                                      tlb_init_loc,
+                                      entry_point,
+                                      "unmap 0x00-0x1E/map 0x1F")
+    if preamble is None and skip_identify_preamble is False:
             logger.error("cannot identify preamble")
             return None, None
-    else:
-        new_preamble = Preamble(preamble.type() + " + TLB init",
-                                    preamble.initial_stack_pointer(),
-                                    entry_point,
-                                    (preamble.size() - 8) + len(preamble_stub),
-                                    deep_trace_required=preamble.deep_trace_required())
-    
-        for bss_start, bss_end in preamble.bss_sections():
-            new_preamble.add_bss(bss_start, bss_end)
-
-        preamble = new_preamble
 
     return tlb, preamble
+
+#
+# this edge case found on Star Wars Episode 1 - Battle for Naboo (US).
+# sets cop0 Wired=1, Context=0, then calls entry point.
+#
+
+NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT = SignatureBuilder() \
+    .pattern([
+        0x24, 0x08, 0x00, 0x01,             # +0x00 li    t0,0x1
+        0x40, 0x88, 0x30, 0x00,             # +0x04 mtc0  t0,Wired,0x0
+        0x40, 0x80, 0x20, 0x00,             # +0x08 mtc0  zero,Context,0x0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x0C jal   SUB_80000880
+        0x00, 0x00, 0x00, 0x00,             # +0x10 _nop
+    ]) \
+    .xref_j_imm26("entry_point", 0x0C) \
+    .build()
+
+def tlb_try_detect_set_wired_clear_context(rom: N64Rom,
+                             ipc: int,
+                             skip_identify_preamble: bool = False) -> tuple[BffiTlb, Preamble]:
+    
+    tlb_init_loc = NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT.find(rom.boot_exe()[:0x200], 0)
+    if tlb_init_loc is None:
+        return None, None
+    
+    logging.info("game initializes TLB Wired=1 and Context=0 on startup")
+
+    xrefs = NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT.xrefs(ipc, rom.boot_exe(), tlb_init_loc)
+    entry_point = xrefs["entry_point"].get_address()
+
+    tlb = BffiTlb()
+    tlb.wired(1)
+    tlb.context(0)
+
+    preamble = _ident_preamble_common(rom,
+                                      ipc,
+                                      tlb_init_loc, 
+                                      entry_point,
+                                      "set Wired=1, Context=0")
+    if preamble is None and skip_identify_preamble is False:
+        logger.error("cannot identify preamble")
+        return None, None
+
+    return tlb, preamble
+
+
+def tlb_try_detect_preamble(rom: N64Rom,
+                            ipc: int,
+                            skip_identify_preamble: bool = False) -> tuple[BffiTlb, Preamble]:
+    tlb = None
+    preamble = None
+
+    callbacks = [
+        tlb_try_detect_singleton,
+        tlb_try_detect_set_wired_clear_context
+    ]
+
+    for cb in callbacks:
+        tlb, preamble = cb(rom, ipc, skip_identify_preamble=skip_identify_preamble)
+        if tlb is not None:
+            return tlb, preamble
+
+    return None, None

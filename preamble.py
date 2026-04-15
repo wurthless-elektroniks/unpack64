@@ -884,10 +884,6 @@ def _identify_nonstandard_preamble(bootexe: bytearray, ipc: int) -> Preamble:
         _identify_packed_bootexe,
         _identify_nustd_packed_bootexe
     ], bootexe, ipc)
-
-    if preamble is None:
-        logger.warning("unrecognized preamble, probably custom runtime")
-
     return preamble
 
 # ------------------------------------------------------------------------------------------

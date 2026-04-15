@@ -9,7 +9,7 @@ from games import GAME_SPECIFIC_UNPACKERS
 
 from preamble import identify_preamble, Preamble, preamble_extract_bss_sections_to_bffi
 
-from tlb import tlb_try_detect_singleton
+from tlb import tlb_try_detect_preamble
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def auto_unpack(rom: N64Rom) -> Bffi:
     tlb = None
 
     if preamble is None:
-        tlb, preamble = tlb_try_detect_singleton(rom, bootexe_entry_point)
+        tlb, preamble = tlb_try_detect_preamble(rom, bootexe_entry_point)
         if preamble is None:
             logger.error("preamble can't be identified, unable to unpack rom...")
             return None
