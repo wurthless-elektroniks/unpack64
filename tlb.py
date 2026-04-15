@@ -25,37 +25,12 @@ import logging
 import struct
 
 from n64rom import N64Rom
-from bffi import BffiTlb, BffiTlbEntry
+from bffi import BffiTlb, BffiTlbEntry, PAGE_SIZE_LUT
 from signature import SignatureBuilder, WILDCARD
 
+from preamble import identify_preamble, Preamble
+
 logger = logging.getLogger(__name__)
-
-# utility stuff, probably will be moved out later.
-
-PAGE_SIZE_LUT = {
-    (0x0000 << 13): 4 * 1024,
-    (0x0003 << 13): 16 * 1024,
-    (0x000F << 13): 64 * 1024,
-    (0x003F << 13): 256 * 1024,
-    (0x00FF << 13): 1024 * 1024,
-    (0x03FF << 13): 4 * 1024 * 1024,
-    (0x0FFF << 13): 16 * 1024 * 1024
-}
-
-def _entryhi_base_address(entryhi: int, pagemask: int) -> int:
-    pass
-
-def _entrylo_valid(entrylo: int) -> bool:
-    return (entrylo & 2) != 0
-
-def _entrylo_writable(entrylo: int) -> bool:
-    return (entrylo & (1<<10)) != 0
-
-def _entrylo_global(entrylo: int) -> bool:
-    return (entrylo & 1) != 0
-
-def _entrylo_page_base(entrylo: int, pagemask: int):
-    pass
 
 
 # generic pattern, sans BSS init stuff, common to turok 2 and revolt.
@@ -159,11 +134,12 @@ NUSTD_TLB_INIT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("entry_point", 0x70) \
     .build()
 
-
-def tlb_try_detect_singleton(rom: N64Rom, ipc: int):
+def tlb_try_detect_singleton(rom: N64Rom,
+                             ipc: int,
+                             skip_identify_preamble: bool = False) -> tuple[BffiTlb, Preamble]:
     tlb_init_loc = NUSTD_TLB_INIT_PATTERN.find(rom.boot_exe()[:0x200], 0)
     if tlb_init_loc is None:
-        return None
+        return None, None
 
     # also detect nustd-style stackpointer init and BSS
 
@@ -178,7 +154,7 @@ def tlb_try_detect_singleton(rom: N64Rom, ipc: int):
 
     if pagemask not in PAGE_SIZE_LUT:
         logger.error("page size invalid")
-        return None
+        return None, None
 
 
     tlb = BffiTlb()
@@ -190,7 +166,6 @@ def tlb_try_detect_singleton(rom: N64Rom, ipc: int):
         entry.entrylo1(0)
 
         tlb.entry(i, entry)
-
 
     entry_1f = BffiTlbEntry()
     entry_1f.pagemask(pagemask)
@@ -212,5 +187,31 @@ def tlb_try_detect_singleton(rom: N64Rom, ipc: int):
     real_entry_point = tlb.virtual_to_physical(entry_point)
     if real_entry_point is None:
         logger.error("sanity check failed! entry point points to unmapped memory space")
-        return None
+        return None, None
     logger.info("virtual address %08x -> physical address %08x", entry_point, real_entry_point)
+
+    # now for one of the nastiest hacks of all time: identifying the preamble.
+    # this preamble looks like a nustd style preamble so what we'll do is copy all the
+    # code until the TLB init point, insert a fake jump/nop combo, and see what matches it.
+    logger.info("trying to identify preamble...")
+    preamble_stub = rom.boot_exe()[:tlb_init_loc] + bytes([0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    
+    preamble = identify_preamble(preamble_stub, ipc)
+
+    if preamble is None:
+        if skip_identify_preamble is False:
+            logger.error("cannot identify preamble")
+            return None, None
+    else:
+        new_preamble = Preamble(preamble.type() + " + TLB init",
+                                    preamble.initial_stack_pointer(),
+                                    entry_point,
+                                    (preamble.size() - 8) + len(preamble_stub),
+                                    deep_trace_required=preamble.deep_trace_required())
+    
+        for bss_start, bss_end in preamble.bss_sections():
+            new_preamble.add_bss(bss_start, bss_end)
+
+        preamble = new_preamble
+
+    return tlb, preamble

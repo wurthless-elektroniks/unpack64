@@ -9,6 +9,7 @@ from games import GAME_SPECIFIC_UNPACKERS
 
 from preamble import identify_preamble, Preamble, preamble_extract_bss_sections_to_bffi
 
+from tlb import tlb_try_detect_singleton
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,23 @@ def auto_unpack(rom: N64Rom) -> Bffi:
     bootexe_entry_point = cic.entry_point(rom)
     logger.info("bootexe entry point: 0x%08x", bootexe_entry_point)
     preamble = identify_preamble(rom.boot_exe(), bootexe_entry_point)
-    
+    tlb = None
+
     if preamble is None:
-        logger.error("preamble can't be identified, unable to unpack rom...")
-        return None
+        tlb, preamble = tlb_try_detect_singleton(rom, bootexe_entry_point)
+        if preamble is None:
+            logger.error("preamble can't be identified, unable to unpack rom...")
+            return None
 
     logger.info("preamble identified as: %s", preamble.type())
-    
+
     if preamble.deep_trace_required():
         logger.error("preamble requires deep trace (bootexe uses custom packer), stopping auto-unpack.")
         return None
     
     bffibuilder = BffiBuilder()
+
+    bffibuilder.initial_tlb(tlb)
 
     crt_entry_point        = preamble.crt_entry_point()
     initial_stack_pointer  = preamble.initial_stack_pointer()

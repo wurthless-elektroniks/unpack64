@@ -8,7 +8,6 @@ from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, nbajam2k_unpack
 from .ubisoft import ray2us_unpack
-from .tlb import tlb_try_detect_singleton
 
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
