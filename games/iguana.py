@@ -17,6 +17,7 @@ import struct
 
 from compression.rnc import rnc_unpack, crc16
 from preamble import identify_preamble
+from tlb import tlb_try_detect_preamble
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
@@ -199,7 +200,6 @@ ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .const_op32_hi16("bss_end", 0x18) \
     .const_op32_lo16("bss_end", 0x1C) \
     .build()
-
 
 def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
@@ -452,6 +452,296 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     bss_end = bssconsts["bss_end"].get_value()
     
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
+    builder.bss(bss_start, bss_end-bss_start)
+
+    return builder.build()
+
+# ------------------------------------------------------------------------------------------
+#
+# All-Star Baseball 2000, All-Star Baseball 2001
+#
+# Similar to NBA Jam 2000.
+# Initialize some magic values (to various resources), RNC decompress the main code segment,
+# jump to the entry point, which then trampolines us into TLB-mapped space to start the game.
+#
+# The main difference is the TLB being setup by the preamble, meaning no TLB init code here
+# and thus a different code signature.
+#
+# ------------------------------------------------------------------------------------------
+
+ALLSTAR2K_BOOT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,             # +0x00 addiu      sp,sp,-0x28
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x04 lui        a0,0x0          <-- 8000035c (also pointer to RNC payload size)
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x08 addiu      a0,a0,0x1978    <-- 8000035c
+        0x27, 0xa5, 0x00, 0x10,             # +0x0C addiu      a1,sp,0x10
+        0x24, 0x06, 0x00, 0x04,             # +0x10 li         a2,0x4
+        0x3c, 0x03, 0x80, 0x00,             # +0x14 lui        v1,0x8000
+        0x24, 0x63, 0x03, 0x1c,             # +0x18 addiu      v1,v1,0x31c
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x1C lui        v0,0x0          <-- 80000360 (also RNC payload)
+        0xaf, 0xb1, 0x00, 0x1c,             # +0x20 sw         s1,local_c(sp)
+        0x24, 0x51, WILDCARD, WILDCARD,     # +0x24 addiu      s1,v0,0x4270    <-- 80000360
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x28 lui        v0,0xf2         <-- 80000364
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x2C addiu      v0,v0,-0x55a0   <-- 80000364
+        0xaf, 0xbf, 0x00, 0x24,             # +0x30 sw         ra,local_4(sp)
+        0xaf, 0xb2, 0x00, 0x20,             # +0x34 sw         s2,local_8(sp)
+        0xaf, 0xb0, 0x00, 0x18,             # +0x38 sw         s0,local_10(sp)
+        0xac, 0x62, 0x00, 0x48,             # +0x3C sw         v0,0x48(v1)
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x40 lui        v0,0xfa        <-- 80000368
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x44 addiu      v0,v0,0x5510   <-- 80000368
+        0xac, 0x64, 0x00, 0x40,             # +0x48 sw         a0,0x40(v1)
+        0xac, 0x71, 0x00, 0x44,             # +0x4C sw         s1,0x44(v1)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x50 jal        FUN_80300330
+        0xac, 0x62, 0x00, 0x4c,             # +0x54 sw        v0,0x4c(v1)
+        0x02, 0x20, 0x20, 0x21,             # +0x58 move       a0,s1
+        0x3c, 0x05, 0x80, 0x20,             # +0x5C lui        a1,0x8020
+        0x8f, 0xb2, 0x00, 0x10,             # +0x60 lw         s2,local_18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x64 jal        FUN_80300330
+        0x24, 0x06, 0x00, 0x04,             # +0x68 _li        a2,0x4
+    ]) \
+    .const_op32_hi16("data_35c", 0x04) \
+    .const_op32_lo16("data_35c", 0x08) \
+    .const_op32_hi16("data_360", 0x1C) \
+    .const_op32_lo16("data_360", 0x24) \
+    .const_op32_hi16("data_364", 0x28) \
+    .const_op32_lo16("data_364", 0x2C) \
+    .const_op32_hi16("data_368", 0x40) \
+    .const_op32_lo16("data_368", 0x44) \
+    .build()
+
+# same as NBA Jam 2000, but with an extra NOP for no god damned reason!!!
+ALLSTAR2K_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, WILDCARD, WILDCARD, # lui        a0,0x13
+        0x24, 0x84, WILDCARD, WILDCARD, # addiu      a0,a0,0x53f0
+        0x00, 0x00, 0x00, 0x00,         # useless NOP
+        0x00, 0x80, 0xf8, 0x09,         # jalr       a0=>SUB_001353f0
+    ]) \
+    .const_op32_hi16("entrypoint", 0) \
+    .const_op32_lo16("entrypoint", 4) \
+    .build()
+
+# different registers here, to piss us off!!
+ALLSTAR2K_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe0,             # +0x00 addiu  sp,sp,-0x20
+        0xaf, 0xbf, 0x00, 0x1c,             # +0x04 sw     ra,local_4(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x08 jal    FUN_80017c18    <-- another BSS section clear-er
+        0xaf, 0xb0, 0x00, 0x18,             # +0x0C _sw    s0,local_8(sp)
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x10 lui    v1,0x8006       <-- BSS start
+        0x24, 0x43, WILDCARD, WILDCARD,     # +0x14 addiu  v1,v1,0x7770
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x18 lui    a0,0x800b       <-- BSS end
+        0x24, 0x44, WILDCARD, WILDCARD,     # +0x1C addiu  a0,a0,-0x2b28
+    ]) \
+    .const_op32_hi16("bss_start", 0x10) \
+    .const_op32_lo16("bss_start", 0x14) \
+    .const_op32_hi16("bss_end", 0x18) \
+    .const_op32_lo16("bss_end", 0x1C) \
+    .build()
+
+def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
+    
+    bootstub_entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point()) + 0x80000000
+
+    if ALLSTAR2K_BOOT_PATTERN.compare(rom.boot_exe(), bootstub_entry_point_phys-ipc) is False:
+        return None
+    
+    logger.info("found All-Star Baseball 2000 unpacker")
+
+    consts = ALLSTAR2K_BOOT_PATTERN.consts(ipc, rom.boot_exe(), bootstub_entry_point_phys-ipc)
+
+    data_35c = consts["data_35c"].get_value()
+    data_360 = consts["data_360"].get_value()
+    data_364 = consts["data_364"].get_value()
+    data_368 = consts["data_368"].get_value()
+    
+    payload_size = struct.unpack(">I", rom.read_bytes(data_35c, 4))[0]
+    payload_rom_address = data_360
+
+    logger.info("RNC-compressed main segment in ROM at 0x%08x (size %d bytes)", payload_rom_address, payload_size)
+
+    payload = rom.read_bytes(payload_rom_address, payload_size)
+    logger.info("Unpacking RNC payload...")
+    payload = rnc_unpack(payload, skipping_input_checksum=True)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    if ALLSTAR2K_ENTRY_POINT_PATTERN.compare(payload) is False:
+        logger.error("entry point in payload didn't match expected")
+        return None
+    
+    entrypoint = ALLSTAR2K_ENTRY_POINT_PATTERN.consts(0x00100000, payload)["entrypoint"].get_value()
+    if tlb.virtual_to_physical(entrypoint) is None:
+        logger.error("TLB configuration is bad! entry point %08x is not mapped!", entrypoint)
+        return None
+    
+    logger.info("real executable entry point is 0x%08x (=0x%08x)", entrypoint, tlb.virtual_to_physical(entrypoint)+0x80000000)
+
+    if ALLSTAR2K_REAL_ENTRY_POINT_PATTERN.compare(payload, entrypoint - 0x100400) is False:
+        logger.error("code at entrypoint was not the BSS init code we expected...")
+        return None
+
+    bssconsts = ALLSTAR2K_REAL_ENTRY_POINT_PATTERN.consts(0x100000, payload, entrypoint - 0x100400)
+    bss_start = bssconsts["bss_start"].get_value()
+    bss_end = bssconsts["bss_end"].get_value()
+    
+    logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
+
+    builder = BffiBuilder()
+    builder.initial_tlb(tlb)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entrypoint)
+
+    magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
+    builder.fix(0x8000035c, magic_values, segment_id=0)
+    builder.fix(0x80000400, payload, segment_id=1)
+
+    builder.bss(bss_start, bss_end-bss_start)
+
+    return builder.build()
+
+# ------------------------------------------------------------------------------------------
+#
+# South Park - Chef's Luv Shack
+#
+# Another variant on NBA Jam 2000, but it sets the audio sample rate to 22050 Hz
+# in the init stub just to be a dick.
+#
+# ------------------------------------------------------------------------------------------
+
+CHEF_BOOT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,             # +0x00 addiu  sp,sp,-0x28
+        0x24, 0x04, 0x56, 0x22,             # +0x04 li     a0,0x5622   (=22050 Hz)
+        0x3c, 0x05, 0x80, 0x00,             # +0x08 lui    a1,0x8000
+        0x24, 0xa5, 0x03, 0x1c,             # +0x0C addiu  a1,a1,0x31c
+        0xaf, 0xb0, 0x00, 0x18,             # +0x10 sw     s0,local_10(sp)
+        0x3c, 0x10, WILDCARD, WILDCARD,     # +0x14 lui    s0,0x0         <-- 8000035c (also pointer to RNC payload size)
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x18 addiu  s0,s0,0x5000   <-- 8000035c
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x1C lui    v0,0x0         <-- 80000360
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x20 addiu  v0,v0,0x5678   <-- 80000360
+        0x3c, 0x03, WILDCARD, WILDCARD,     # +0x24 lui    v1,0xee        <-- 80000364
+        0x24, 0x63, WILDCARD, WILDCARD,     # +0x28 addiu  v1,v1,-0x43d0  <-- 80000364
+        0xaf, 0xbf, 0x00, 0x24,             # +0x2C sw     ra,local_4(sp)
+        0xaf, 0xb2, 0x00, 0x20,             # +0x30 sw     s2,local_8(sp)
+        0xaf, 0xb1, 0x00, 0x1c,             # +0x34 sw     s1,local_c(sp)
+        0xac, 0xa2, 0x00, 0x44,             # +0x38 sw     v0,0x44(a1)
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x3C lui    v0,0xee       <-- 80000368
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x40 addiu  v0,v0,0x6628  <-- 80000368
+        0xac, 0xa3, 0x00, 0x48,             # +0x44 sw     v1,0x48(a1)
+        0x00, 0x62, 0x18, 0x26,             # +0x48 xor    v1,v1,v0
+        0x00, 0x03, 0x90, 0x2b,             # +0x4C sltu   s2,zero,v1
+        0xac, 0xb0, 0x00, 0x40,             # +0x50 sw     s0,0x40(a1)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x54 jal    FUN_80300a60
+        0xac, 0xa2, 0x00, 0x4c,             # +0x58 _sw    v0,0x4c(a1)
+        0x02, 0x00, 0x20, 0x21,             # +0x5C move   a0,s0
+        0x27, 0xa5, 0x00, 0x10,             # +0x60 addiu  a1,sp,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x64 jal    FUN_8030041c
+        0x24, 0x06, 0x00, 0x04,             # +0x68 _li    a2,0x4
+        0x3c, 0x02, WILDCARD, WILDCARD,     # +0x6C lui    v0,0xf6        <-- RNC payload address in ROM
+        0x24, 0x51, WILDCARD, WILDCARD,     # +0x70 addiu  s1,v0,-0x42e0  <-- RNC payload address in ROM
+        0x02, 0x20, 0x20, 0x21,             # +0x74 move   a0,s1
+        0x3c, 0x05, 0x80, 0x18,             # +0x78 lui    a1,0x8018
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x7C jal    FUN_8030041c
+        0x24, 0x06, 0x00, 0x14,             # +0x80 _li    a2,0x14
+    ]) \
+    .const_op32_hi16("data_35c", 0x14) \
+    .const_op32_lo16("data_35c", 0x18) \
+    .const_op32_hi16("data_360", 0x1C) \
+    .const_op32_lo16("data_360", 0x20) \
+    .const_op32_hi16("data_364", 0x24) \
+    .const_op32_lo16("data_364", 0x28) \
+    .const_op32_hi16("data_368", 0x3C) \
+    .const_op32_lo16("data_368", 0x40) \
+    .const_op32_hi16("payload_rom_address", 0x6C) \
+    .const_op32_lo16("payload_rom_address", 0x70) \
+    .build()
+
+CHEF_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe0,         # addiu      sp,sp,-0x20
+        0x3c, 0x02, 0x80, WILDCARD,     # lui        v0,0x800c      <-- BSS start
+        0x24, 0x43, WILDCARD, WILDCARD, # addiu      v1,v0,0x6050
+        0x3c, 0x02, 0x80, WILDCARD,     # lui        v0,0x8010      <-- BSS end
+        0x24, 0x44, WILDCARD, WILDCARD, # addiu      a0,v0,0x47a8
+    ]) \
+    .const_op32_hi16("bss_start", 0x04) \
+    .const_op32_lo16("bss_start", 0x08) \
+    .const_op32_hi16("bss_end", 0x0C) \
+    .const_op32_lo16("bss_end", 0x10) \
+    .build()
+
+def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
+    
+    bootstub_entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point()) + 0x80000000
+
+    if CHEF_BOOT_PATTERN.compare(rom.boot_exe(), bootstub_entry_point_phys-ipc) is False:
+        return None
+    
+    logger.info("found Chef's Luv Shack unpacker")
+
+    consts = CHEF_BOOT_PATTERN.consts(ipc, rom.boot_exe(), bootstub_entry_point_phys-ipc)
+
+    data_35c = consts["data_35c"].get_value()
+    data_360 = consts["data_360"].get_value()
+    data_364 = consts["data_364"].get_value()
+    data_368 = consts["data_368"].get_value()
+        
+    logger.info(\
+"""magic values table as follows:
+    0x8000035c = %08x
+    0x80000360 = %08x
+    0x80000364 = %08x
+    0x80000368 = %08x
+""",data_35c,data_360,data_364,data_368)
+    
+    payload_rom_address = consts["payload_rom_address"].get_value()
+    
+    payload_size = struct.unpack(">I", rom.read_bytes(payload_rom_address + 8, 4))[0]
+
+    logger.info("RNC-compressed main segment in ROM at 0x%08x (size %d bytes)", payload_rom_address, payload_size)
+
+    payload = rom.read_bytes(payload_rom_address, payload_size + 18)
+    logger.info("Unpacking RNC payload...")
+    payload = rnc_unpack(payload)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    # TLB-related weirdness; seems there's the option that the payload could set up
+    # more TLB stuff before we enter TLB space. in practice we jump to TLB-mapped space immediately
+    entrypoint = 0x80000400 if data_364 == data_368 else 0x00100400
+    logger.info("real executable entry point is 0x%08x (=0x%08x)", entrypoint, tlb.virtual_to_physical(entrypoint)+0x80000000)
+
+    phys_entrypoint = tlb.virtual_to_physical(entrypoint)
+    if CHEF_REAL_ENTRY_POINT_PATTERN.compare(payload, phys_entrypoint - 0x400) is False:
+        logger.error("code at entrypoint was not the BSS init code we expected...")
+        return None
+    
+    bssconsts = CHEF_REAL_ENTRY_POINT_PATTERN.consts(0x100000, payload, entrypoint - 0x100400)
+    bss_start = bssconsts["bss_start"].get_value()
+    bss_end = bssconsts["bss_end"].get_value()
+    
+    logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
+
+    builder = BffiBuilder()
+    builder.initial_tlb(tlb)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entrypoint)
+
+    magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
+    builder.fix(0x8000035c, magic_values, segment_id=0)
+    builder.fix(0x80000400, payload, segment_id=1)
+
     builder.bss(bss_start, bss_end-bss_start)
 
     return builder.build()

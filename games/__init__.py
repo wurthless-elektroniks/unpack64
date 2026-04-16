@@ -6,7 +6,8 @@ from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
-from .iguana import turok_unpack, allstar99_unpack, nbajam2k_unpack
+from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
+                    chef_unpack
 from .ubisoft import ray2us_unpack
 
 # points hash -> unpacker function.
@@ -79,6 +80,21 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NBA Jam 2000 (E) [!]
     "76778e298da9b3929c1659c2374d19df1d542fb2db89ff5be7d53c7dfa267fca": nbajam2k_unpack,
+
+    # All-Star Baseball 2000 (U) [!]
+    "f354489d79d6ca69a43f3bf95e0e112a6d3a20acdbf96ae847c4180aa0154791": allstar2k_unpack,
+
+    # All-Star Baseball 2000 (E) [!]
+    "2e30b758271c441eab2ed35dcf3a542fd46782522607c2fd6b1663771b756e07": allstar2k_unpack,
+
+    # All-Star Baseball 2001 (U) [!]
+    "35313f399fd98072bd7dd22d98814bb2b5e49aadcc654b51d558b639c438f144": allstar2k_unpack,
+
+    # South Park - Chef's Luv Shack (U) [!]
+    "71219cf4aaab9884b7d026d1676bfbc00eaae2f0e05d1c0a09836b42473ea575": chef_unpack,
+
+    # South Park - Chef's Luv Shack (E) [!]
+    "808c16c10a8c60998b743f7ed96ec82363172dfeccc1035d2cbd527bdc9df6d0": chef_unpack,
 
     # ------------------------------------------------------
     # 3DO / Sarge's Heroes games using a custom preamble

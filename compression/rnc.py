@@ -228,7 +228,7 @@ def _read_huffman(table: list, bitstream: _RncBitStream) -> int | None:
 
 # ------------------------------------------------------------------------------------------------
 
-def _unpack_type_1(buffer: bytes) -> bytes | None:
+def _unpack_type_1(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
     rnc_header = struct.unpack(">IIIHHH", buffer[0:18])
     magic = rnc_header[0]
     if magic != 0x524E4301:
@@ -240,10 +240,11 @@ def _unpack_type_1(buffer: bytes) -> bytes | None:
     compressed_crc16    = rnc_header[4]
     _unused = rnc_header[5]
     
-    actual_compressed_crc16 = crc16(buffer, 18, compressed_length)
-    if actual_compressed_crc16 != compressed_crc16:
-        logging.error("RNC CRC-16 mismatch on compressed data: expected %04x, got %04x", compressed_crc16, actual_compressed_crc16)
-        return None
+    if skipping_input_checksum is False:
+        actual_compressed_crc16 = crc16(buffer, 18, compressed_length)
+        if actual_compressed_crc16 != compressed_crc16:
+            logging.error("RNC CRC-16 mismatch on compressed data: expected %04x, got %04x", compressed_crc16, actual_compressed_crc16)
+            return None
 
     bitstream = _RncBitStream(buffer, 18)
 
@@ -309,8 +310,8 @@ def _unpack_type_1(buffer: bytes) -> bytes | None:
 
     return out_buffer
 
-def rnc_unpack(buffer: bytes) -> bytes | None:
+def rnc_unpack(buffer: bytes, skipping_input_checksum: bool = False)  -> bytes | None:
     if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x01:
-        return _unpack_type_1(buffer)
+        return _unpack_type_1(buffer, skipping_input_checksum=skipping_input_checksum)
 
     return None
