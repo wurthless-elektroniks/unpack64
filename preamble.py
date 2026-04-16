@@ -790,12 +790,66 @@ def _ident_alt_libultra_type_4(bootexe: bytearray, ipc: int) -> Preamble | None:
     preamble.add_bss(xrefs["bss2_end_address"].get_address(),  xrefs["bss2_end_address"].get_address())
     return preamble
 
+# very odd variant from NHL Breakaway 98 which, instead of storing the BSS endpoint,
+# stores the BSS section size
+ALT_LIBULTRA_PREAMBLE_TYPE_5 = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x1D, 0x80, WILDCARD,         # 0x00 lui sp,0x80xx    - set initial stack pointer, typically to 0x803FFFF0 at end of RDRAM
+        0x27, 0xBD, WILDCARD, WILDCARD,     # 0x04 addiu/ori sp,sp,####
+        0x3C, 0x08, 0x80, WILDCARD,         # 0x08 lui t0,0x80xx
+        0x25, 0x08, WILDCARD, WILDCARD,     # 0x0C addiu t0,t0,#### - BSS start position
+        0x3C, 0x09, WILDCARD, WILDCARD,     # 0x10 lui t1,0xxxxx
+        0x25, 0x29, WILDCARD, WILDCARD,     # 0x14 addiu t0,t0,#### - BSS size
+        0x01, 0x09, 0x48, 0x21,             # 0x18 addu t1,t0,t1
+        0x11, 0x09, 0x00, 0x05,             # 0x1C beq        t0,t1,LAB_80000434
+        0x00, 0x00, 0x00, 0x00,             # 0x20 _nop
+        0x25, 0x08, 0x00, 0x04,             # 0x24 addiu      t0,t0,0x4
+        0x01, 0x09, 0x08, 0x2b,             # 0x28 sltu       at,t0,t1
+        0x14, 0x20, 0xff, 0xfd,             # 0x2C bne        at,zero,LAB_80000424
+        0xad, 0x00, 0xff, 0xfc,             # 0x30 _sw        zero,-0x4(t0)=>DAT_80064040                                = 74696C65h
+        0x08, WILDCARD, WILDCARD, WILDCARD, # 0x34 jal        FUN_80003b00                                               undefined FUN_80003b00()
+        0x00, 0x00, 0x00, 0x00,             # 0x38 _nop
+    ]) \
+    .modify_andmask(0x04, [0xEF]) \
+    .modify_andmask(0x34, [0xFB]) \
+    .size(0x3C) \
+    .xref_op32_hi16("initial_sp", 0x00) \
+    .xref_op32_lo16("initial_sp", 0x04) \
+    .const_op32_hi16("bss_start_address", 0x08) \
+    .const_op32_lo16("bss_start_address", 0x0C) \
+    .const_op32_hi16("bss_size", 0x10) \
+    .const_op32_lo16("bss_size", 0x14) \
+    .xref_j_imm26("crt_entry", 0x34) \
+    .build()
+
+def _ident_alt_libultra_type_5(bootexe: bytearray, ipc: int) -> Preamble | None:
+    if ALT_LIBULTRA_PREAMBLE_TYPE_5.compare(bootexe) is False:
+        return None
+
+    xrefs  = ALT_LIBULTRA_PREAMBLE_TYPE_5.xrefs(ipc, bootexe)
+    consts = ALT_LIBULTRA_PREAMBLE_TYPE_5.consts(ipc, bootexe)
+
+    crt_entry_point        = xrefs["crt_entry"].get_address()
+    initial_stack_pointer  = xrefs["initial_sp"].get_address()
+
+    preamble = Preamble("libultra alt. (nustd?), type 5",
+                    initial_stack_pointer,
+                    crt_entry_point,
+                    0x3C)
+
+    bss_start_address = consts["bss_start_address"].get_value()
+    bss_size = consts["bss_size"].get_value()
+
+    preamble.add_bss(bss_start_address, bss_start_address + bss_size)
+    return preamble
+
 def _ident_nustd(bootexe: bytearray, ipc: int) -> Preamble | None:
     return _try_ident_preamble([
         _ident_alt_libultra_type_1,
         _ident_alt_libultra_type_2,
         _ident_alt_libultra_type_3,
-        _ident_alt_libultra_type_4
+        _ident_alt_libultra_type_4,
+        _ident_alt_libultra_type_5
     ], bootexe, ipc)
 
 # ------------------------------------------------------------------------------------------
