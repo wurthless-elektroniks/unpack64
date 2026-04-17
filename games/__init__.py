@@ -2,6 +2,7 @@
 Game-specific unpacker drivers.
 '''
 
+from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -9,6 +10,7 @@ from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
                     chef_unpack
 from .ubisoft import ray2us_unpack
+
 
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
@@ -152,6 +154,21 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Donkey Kong 64 (E) [!]
     "f704ddc06dda5bee065dd89adcf86aa58bd817684e190094cd0776c0cabba9df": dk64jp_unpack,
+
+
+    # ------------------------------------------------------
+    # Bust-A-Move '99 with .bss-less preamble, that instead initializes .bss
+    # in CRT startup function
+    # ------------------------------------------------------
+
+    # Bust-A-Move '99 (U) [!]
+    "2932dae8bcce7cb86bbc15c5f1cca96ba5838c486398d445b248276f1203b501": bam99_unpack,
+
+    # Bust-A-Move 3 DX (E) [!]
+    "b8847b703aff8ff887d58b482067fc8dece91856503685b20249c25066c4657c": bam99_unpack,
+
+    # Puzzle Bobble 64 (J) [!]
+    "754ffac52da6d7ccd024c61aaef9305ddd6991130c678783122ac69a0a25c717": bam99_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

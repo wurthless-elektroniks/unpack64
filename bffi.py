@@ -181,6 +181,10 @@ def _serialize_section_type_only(section_type: BffiSectionType) -> bytes:
 def _serialize_bss(section_id: int, virtual_load_address: int, load_size: int, initial_word: int):
     return _serialize_section_marker(section_id, BffiSectionType.BSS) + struct.pack(">III", virtual_load_address, load_size, initial_word)
 
+def _serialize_tlb_set(entryhi, entrylo0, entrylo1, pagemask) -> bytes:
+    return _serialize_section_marker(0, BffiSectionType.TLB_SET) + \
+        struct.pack(">IIII", entryhi, entrylo0, entrylo1, pagemask)
+
 def _serialize_fix_or_seg(section_type: BffiSectionType,
                           section_id,
                           source_offset,
@@ -345,6 +349,11 @@ class BffiTlb(object):
         #   after an entry is written.
         # - The cop0 Index register will be set to the current Index value before a page entry is written.
 
+        buffer = bytearray()
+
+        # TODO: factor 5/lucasarts games which set Wired/Context registers but nothing else
+
+        # TODO: size-optimize output using range commands
         for i in range(0x20):
             entry = self._entries[i]
             
@@ -352,14 +361,14 @@ class BffiTlb(object):
                entry.entrylo0() == 0x00000000 and \
                entry.entrylo1() == 0x00000000:
                 # entry is unmapped
-                pass
-            
-            # otherwise, the entry is mapped
+                buffer += _serialize_section_type_only(BffiSectionType.TLB_UNMAP)
+            else:
+                buffer += _serialize_tlb_set(entry.entryhi(),
+                                             entry.entrylo0(),
+                                             entry.entrylo1(),
+                                             entry.pagemask())
 
-            pass
-
-
-        pass
+        return buffer
 
     def _tlb_lookup_entry_for_address(self, address: int, entryhi_value: int = 0) -> BffiTlbEntry | None:
         '''
@@ -662,6 +671,8 @@ class BffiBuilder(object):
         # memory copy operations
         self._copy_ops = []
 
+        self._tlb = None
+
         # required memory size
         # 0 = works on both 4 mb and 8 mb systems
         # 4 = 4 mb systems only
@@ -680,7 +691,7 @@ class BffiBuilder(object):
         return self
 
     def initial_tlb(self, tlb):
-        pass
+        self._tlb = tlb
 
     def bss(self,
             virtual_start_address: int,
@@ -783,6 +794,7 @@ class BffiBuilder(object):
         bffi._ipc = self._ipc
         bffi._initial_gp = self._initial_gp
         bffi._rom_hash = self._rom_hash
+        bffi._tlb = self._tlb
 
         bffi._fix_sections = self._fix_segments
         bffi._seg_sections = self._seg_segments

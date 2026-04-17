@@ -100,8 +100,6 @@ def unpack_rom(rom: N64Rom) -> Bffi | None:
     # as that's how we'll know how to find all the various code overlays
     rom_hash = rom.sha256()
 
-    bffi = None
-
     if rom_hash in GAME_SPECIFIC_UNPACKERS:
         cic = get_cic(rom)
         bootexe_entry_point = cic.entry_point(rom)
@@ -111,7 +109,7 @@ def unpack_rom(rom: N64Rom) -> Bffi | None:
 
         return unpack_fcn(rom, bootexe_entry_point)
 
-    logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results). rom sha256 hash was: %s", rom_hash)
+    logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results).\nrom sha256 hash was: %s", rom_hash)
     return auto_unpack(rom)
 
 def main():
@@ -159,7 +157,7 @@ def main():
         logger.error("unpack failed!")
         return None
     
-    # serialize BFFI and write it to a file
+    
     logger.info("serializing BFFI...")
     serialized = bffi.serialize()
     
@@ -170,7 +168,7 @@ def main():
     logger.info("attempt write to: %s", args.bffi_out)
     with open(args.bffi_out, "wb") as f:
         f.write(serialized)
-    
+    logger.info("wrote output OK.")
 
 if __name__ == "__main__":
     logging.basicConfig(filename='/dev/null', level=logging.DEBUG)
