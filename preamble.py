@@ -933,10 +933,40 @@ def _identify_nustd_packed_bootexe(bootexe: bytearray, ipc: int) -> Preamble:
                     deep_trace_required=True)
     return preamble
 
+# Star Wars Rogue Squadron; reorders opcodes so that the low 16 bits
+# of the stack pointer are set up in the jump delay slot
+NUSTD_STYLE_PACKED_BOOTEXE_ALT_PREAMBLE = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x1D, 0x80, WILDCARD,
+        0x08, WILDCARD, WILDCARD, WILDCARD,
+        0x27, 0xBD, WILDCARD, WILDCARD, # same ori/addiu possibility as nustd type 1
+    ]) \
+    .modify_andmask(0x08, bytes([0xEF])) \
+    .xref_op32_hi16("initial_sp", 0x00) \
+    .xref_op32_lo16("initial_sp", 0x08) \
+    .xref_j_imm26("crt_entry", 0x04) \
+    .build()
+
+def _identify_nustd_packed_alt_bootexe(bootexe: bytearray, ipc: int) -> Preamble:
+    if NUSTD_STYLE_PACKED_BOOTEXE_ALT_PREAMBLE.compare(bootexe) is False:
+        return None
+
+    xrefs = NUSTD_STYLE_PACKED_BOOTEXE_ALT_PREAMBLE.xrefs(ipc, bootexe)
+    crt_entry_point        = xrefs["crt_entry"].get_address()
+    initial_stack_pointer  = xrefs["initial_sp"].get_address()
+
+    preamble = Preamble("nustd with no .bss (alternate), probably packed",
+                    initial_stack_pointer,
+                    crt_entry_point,
+                    0x0C,
+                    deep_trace_required=True)
+    return preamble
+
 def _identify_nonstandard_preamble(bootexe: bytearray, ipc: int) -> Preamble:
     preamble = _try_ident_preamble([
         _identify_packed_bootexe,
-        _identify_nustd_packed_bootexe
+        _identify_nustd_packed_bootexe,
+        _identify_nustd_packed_alt_bootexe
     ], bootexe, ipc)
     return preamble
 

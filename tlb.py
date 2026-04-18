@@ -174,7 +174,7 @@ def tlb_try_detect_singleton(rom: N64Rom,
     # also detect nustd-style stackpointer init and BSS
 
     consts = NUSTD_TLB_INIT_PATTERN.consts(ipc, rom.boot_exe(), tlb_init_loc)
-    logging.info("game maps TLB page 0x1F on startup")
+    logger.info("game maps TLB page 0x1F on startup")
 
     pagemask    = consts["pagemask"].get_value()
     entryhi     = consts["entryhi"].get_value()
@@ -231,49 +231,95 @@ def tlb_try_detect_singleton(rom: N64Rom,
     return tlb, preamble
 
 #
-# this edge case found on Star Wars Episode 1 - Battle for Naboo (US).
-# sets cop0 Wired=1, Context=0, then calls entry point.
+# Factor 5 / Lucasarts games will set cop0 Wired=1, Context=0,
+# unmap pages 0x01-0x1F, and then map page 0x00.
+# Execution then continues in TLB mapped space (I think).
+#
+# The TLB mapping function takes the following parameters
+# - a0 = pagemask (Indiana Jones uses 0x7fe000)
+# - a1 = EntryHi
+# - a2 = EntryLo0 input, EntryLo0 gets (EntryLo0 >> 6) | 0x1F
+# - a3 = EntryLo1 input, EntryLo1 gets (EntryLo1 >> 6) | 0x1F
+#
+# Index is set to 0 prior to running the TLB mapping function
 #
 
-NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT = SignatureBuilder() \
+FACTOR5_TLB_INIT_STUB = SignatureBuilder() \
     .pattern([
         0x24, 0x08, 0x00, 0x01,             # +0x00 li    t0,0x1
         0x40, 0x88, 0x30, 0x00,             # +0x04 mtc0  t0,Wired,0x0
         0x40, 0x80, 0x20, 0x00,             # +0x08 mtc0  zero,Context,0x0
-        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x0C jal   SUB_80000880
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x0C jal   SUB_80000880 <-- unmap pages 0x01-0x1F
         0x00, 0x00, 0x00, 0x00,             # +0x10 _nop
+        0x40, 0x80, 0x00, 0x00,             # +0x14 mtc0  zero,Index,0x0
+        0x3c, 0x04, 0x00, 0x7f,             # +0x18 lui   a0,0x7f
+        0x34, 0x84, 0xe0, 0x00,             # +0x1C ori   a0,a0,0xe000
+        0x3c, 0x05, 0x40, 0x00,             # +0x20 lui   a1,0x4000
+        0x3c, 0x06, 0x00, 0x00,             # +0x24 lui   a2,0x0
+        0x3c, 0x07, 0x00, 0x40,             # +0x28 lui   a3,0x40
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x2C jal   FUN_80000f08 <-- map page
+        0x00, 0x00, 0x00, 0x00,             # +0x30 _nop
+        0x3c, 0x08, WILDCARD, WILDCARD,     # +0x34 lui   t0,0x4000    <-- entry point
+        0x35, 0x08, WILDCARD, WILDCARD,     # +0x38 ori   t0,t0,0x44c
+        0x01, 0x00, 0x00, 0x08,             # +0x3C jr    t0
+        0x00, 0x00, 0x00, 0x00,             # +0x40 _nop
     ]) \
-    .xref_j_imm26("entry_point", 0x0C) \
+    .const_op32_hi16("entry_point", 0x34) \
+    .const_op32_lo16("entry_point", 0x38) \
     .build()
 
-def tlb_try_detect_set_wired_clear_context(rom: N64Rom,
+def tlb_try_detect_factor5_stub(rom: N64Rom,
                              ipc: int,
                              skip_identify_preamble: bool = False) -> tuple[BffiTlb, Preamble]:
     
-    tlb_init_loc = NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT.find(rom.boot_exe()[:0x200], 0)
+    tlb_init_loc = FACTOR5_TLB_INIT_STUB.find(rom.boot_exe()[:0x200], 0)
     if tlb_init_loc is None:
         return None, None
-    
-    logging.info("game initializes TLB Wired=1 and Context=0 on startup")
 
-    xrefs = NUSTD_TLB_SET_WIRED_CLEAR_CONTEXT.xrefs(ipc, rom.boot_exe(), tlb_init_loc)
-    entry_point = xrefs["entry_point"].get_address()
+    logger.info("found factor 5 TLB init. game unmaps pages 0x01-0x1F and then maps page 0x00")
 
+    # TODO: remove hardcoding, especially if this is found on other games too
     tlb = BffiTlb()
+    for i in range(0x01,0x20):
+        entry = BffiTlbEntry()
+        entry.pagemask(0)
+        entry.entryhi(0x80000000)
+        entry.entrylo0(1)
+        entry.entrylo1(1)
+
+        tlb.entry(i, entry)
+
+    entry_00 = BffiTlbEntry()
+    entry_00.pagemask(0x7FE000)
+    entry_00.entryhi(0x40000000)
+    entry_00.entrylo0( (0 >> 6) | 0x1F )
+    entry_00.entrylo1( (0x400000 >> 6) | 0x1F )
+    tlb.entry(0x00, entry_00)
+
     tlb.wired(1)
     tlb.context(0)
+
+    consts = FACTOR5_TLB_INIT_STUB.consts(ipc, rom.boot_exe(), tlb_init_loc)
+    entry_point = consts["entry_point"].get_value()
+
+    entry_point_phys = tlb.virtual_to_physical(entry_point)
+
+    if entry_point_phys is None:
+        logger.error("failed to map entry point to a physical address")
+        return None
+
+    logger.info("entry point is at 0x%08x (=0x%08x)", entry_point, 0x80000000+entry_point_phys)
 
     preamble = _ident_preamble_common(rom,
                                       ipc,
                                       tlb_init_loc, 
                                       entry_point,
-                                      "set Wired=1, Context=0")
+                                      "Factor 5 style (map page 0x00, unmap pages 0x01-0x1F)")
     if preamble is None and skip_identify_preamble is False:
         logger.error("cannot identify preamble")
         return None, None
 
     return tlb, preamble
-
 
 def tlb_try_detect_preamble(rom: N64Rom,
                             ipc: int,
@@ -283,7 +329,7 @@ def tlb_try_detect_preamble(rom: N64Rom,
 
     callbacks = [
         tlb_try_detect_singleton,
-        tlb_try_detect_set_wired_clear_context
+        tlb_try_detect_factor5_stub,
     ]
 
     for cb in callbacks:

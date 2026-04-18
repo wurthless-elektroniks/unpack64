@@ -5,6 +5,7 @@ Game-specific unpacker drivers.
 from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
+from .factor5 import rogue_us_unpack, rogue_jp_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
@@ -169,6 +170,24 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Puzzle Bobble 64 (J) [!]
     "754ffac52da6d7ccd024c61aaef9305ddd6991130c678783122ac69a0a25c717": bam99_unpack,
+
+    # ------------------------------------------------------
+    #
+    # Factor 5 games
+    #
+    # ------------------------------------------------------
+
+    # Star Wars - Rogue Squadron (U) (M3) [!].z64
+    "9c32d0087fa2b83c5ee6f19ee86683907653ed8f30e7d4680a0adac334559dd7": rogue_us_unpack,
+
+    # Star Wars - Shutsugeki! Rogue Chuutai (J) [!]
+    "6c13a4b27820ab17f8e9d67775cf68f6df757c62babc6347542e5d456770878c": rogue_jp_unpack,
+
+    # Star Wars - Rogue Squadron (E) (M3) (V1.0) [!]
+    "a33b6b738116c36e78a0d078ceb9ff7ddaa7b36244689421fa7d85d70ccc2273": rogue_us_unpack,
+
+    # Star Wars - Rogue Squadron (E) (M3) (V1.1) [!]
+    "592b37eed2730ae25232b163dea6632cf6b9ed21dd3be35c0500a939b897627b": rogue_jp_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
