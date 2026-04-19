@@ -6,6 +6,7 @@ from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
+from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
@@ -188,6 +189,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Star Wars - Rogue Squadron (E) (M3) (V1.1) [!]
     "592b37eed2730ae25232b163dea6632cf6b9ed21dd3be35c0500a939b897627b": rogue_jp_unpack,
+
+
+    # ------------------------------------------------------
+    #
+    # Mario Tennis
+    #
+    # ------------------------------------------------------
+
+    # Mario Tennis (U) [!]
+    "6341ec31c937eddf6fab5c848470c9b7c27f43a42a494a7a1aae943eb91d90fb": mariotennis_unpack,
+
+    # Mario Tennis (E) [!]
+    "1d9add31b3cf320657ada5295954de12061070cede84dfa6dd1245e9c6548838": mariotennis_unpack,
+
+    # Mario Tennis 64 (J) [!]
+    "b8d053a22ea2764904f32ed19daa60552e1bca28e1f1c074f4e4c59c91b9fe47": mariotennis_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
