@@ -4,7 +4,7 @@ Game-specific unpacker drivers.
 
 from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
-from .extremeg import extremeg_unpack
+from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
 from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -121,7 +121,7 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
     # Extreme-G LZSS packer
     # ------------------------------------------------------
-    
+
     # Extreme-G (U) [!]
     "9e67bc574e40ef273759d587972655003d5213e625bfa68d3071dc9782d2071c": extremeg_unpack,
 
@@ -130,6 +130,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Extreme-G (E) (M5) [!]
     "45cfbf079b7c5777ee47f3b86c643eeeb406acb2a84c95ec4ab2b5e2d754107b": extremeg_unpack,
+
+    # Extreme-G XG2 (U) [!]
+    "0b5d9904cf45a92396396308506da0ae258afe44a902c96e50d0ff4969c67500": xg2_unpack,
+
+    # Extreme-G XG2 (J) [!]
+    "5004c79552feb976b72aec4fa3e3eba2e19f7e7b6233be58acee9f7b7fb75cbe": xg2_unpack,
+
+    # Extreme-G XG2 (E) (M5) [!]
+    "de1deae125b6f17048cb240132dbfe918b8fec61fe2ed1fe8e5a2e03995211b3": xg2_unpack,
 
     # ------------------------------------------------------
     # Rareware DEFLATE-based unpacker (zlib or gzip)
