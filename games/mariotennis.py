@@ -12,7 +12,8 @@ so the unpacker will be wiped from memory at that point.
 
 The bootexe is only 176 kbytes so it obviously needs to load more code segments
 to start the game. A big table of resources is passed in a0 to the bootexe,
-and they're decompressed using the same algorithm (I think).
+and they're decompressed using the same algorithm (I think). For the US version
+the table is at 0x116C0~0x13E98 for a total of 0x4FB entries.
 
 The bootexe will load the following segments, in order:
 - Resource 0x4E is a one-time init stub that loads to 0x80100000 and will be overwritten
@@ -30,7 +31,7 @@ import logging
 from preamble import identify_preamble
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder
-from signature import SignatureBuilder, WILDCARD
+from signature import SignatureBuilder, WILDCARD, Signature
 from compression.mariotennis import mariotennis_decompress
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,140 @@ def _unpack_resource(rom: N64Rom, bigtable_rom_address: int, resource_id: int):
     logger.info("try extract resource %d: in ROM at 0x%08x~0x%08x", resource_id, resource_start_pos, resource_end_pos)
     return mariotennis_decompress(rom.read_bytes(resource_start_pos, resource_end_pos-resource_start_pos))
 
+def _find_resource_load_candidates(segment: bytes,
+                                 segment_load_address: int,
+                                 resourceloadto_address: int):
+    pattern = SignatureBuilder() \
+        .pattern(
+            struct.pack(">I", 0x0C000000 | (resourceloadto_address & 0x3FFFFFFF) >> 2)
+        ) \
+        .build()
+    
+    offset = 0
+    while offset < len(segment):
+        offset = pattern.find(segment, offset = offset)
+        if offset is None:
+            return
+        
+        logger.info("... calls ResourceLoadTo() at +0x%06x",offset)
+        offset += 4
+
+def _find_resource_load_locations_for_pattern(segment: bytes,
+                                 segment_load_address: int,
+                                 resourceloadto_address: int,
+                                 pattern: Signature):
+
+    load_locations = {}
+
+    offset = 0
+    while offset < len(segment):
+        offset = pattern.find(segment, offset = offset)
+        if offset is None:
+            return load_locations
+
+        xrefs  = pattern.xrefs(segment_load_address, segment, offset)
+        if xrefs["resourceloadto"].get_address() == resourceloadto_address:
+            consts = pattern.consts(segment_load_address, segment, offset)
+            resource_id = consts["resource_id"].get_value()
+            load_address = consts["load_address"].get_value()
+            load_locations[resource_id] = load_address
+
+        offset += 4
+    return load_locations
+
+def _find_resource_load_locations(segment: bytes,
+                                 segment_load_address: int,
+                                 resourceloadto_address: int):
+    
+    # found in bootexe and main entry, juggles registers needlessly
+    pattern_a = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x10, 0x80, WILDCARD,         # +0x00 lui        s0,0x800d        <-- load address
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x04 addiu      s0,s0,-0x8000
+        0x3c, 0x04, 0x00, 0x00,             # +0x08 lui        a0,0x0
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x0C addiu      a0,a0,0x0        <-- resource id #0: main entry point stub
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x10 jal        ResourceLoadTo
+        0x02, 0x00, 0x28, 0x21              # +0x14 _move      a1,s0
+    ]) \
+    .const_op32_hi16("resource_id", 0x08) \
+    .const_op32_lo16("resource_id", 0x0C) \
+    .const_op32_hi16("load_address", 0x00) \
+    .const_op32_lo16("load_address", 0x04) \
+    .xref_j_imm26("resourceloadto", 0x10) \
+    .build()
+
+    # found in various segments, saves a couple opcodes
+    pattern_b = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, 0x00, 0x00,             # +0x00 lui        a0,0x0
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x04 addiu      a0,a0,0x314
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x08 lui        a1,0x8014
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x0C jal        ResourceLoadTo
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x10 _addiu     a1,a1,-0x5b0
+    ]) \
+    .const_op32_hi16("resource_id", 0x00) \
+    .const_op32_lo16("resource_id", 0x04) \
+    .const_op32_hi16("load_address", 0x08) \
+    .const_op32_lo16("load_address", 0x10) \
+    .xref_j_imm26("resourceloadto", 0x0C) \
+    .build()
+
+    # also found in segments
+    pattern_c = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, 0x00, 0x00,             # lui        a0,0x0
+        0x24, 0x84, WILDCARD, WILDCARD,     # addiu      a0,a0,0x372
+        0x3c, 0x10, 0x80, WILDCARD,         # lui        s0,0x8020
+        0x26, 0x10, WILDCARD, WILDCARD,     # addiu      s0,s0,0x0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        SUB_80037dfc
+        0x02, 0x00, 0x28, 0x21,             # _move      a1=>SUB_80200000,s0
+    ]) \
+    .const_op32_hi16("resource_id", 0x00) \
+    .const_op32_lo16("resource_id", 0x04) \
+    .const_op32_hi16("load_address", 0x08) \
+    .const_op32_lo16("load_address", 0x0C) \
+    .xref_j_imm26("resourceloadto", 0x10) \
+    .build()
+
+    return \
+    _find_resource_load_locations_for_pattern(segment, segment_load_address, resourceloadto_address, pattern_a) | \
+    _find_resource_load_locations_for_pattern(segment, segment_load_address, resourceloadto_address, pattern_b) | \
+    _find_resource_load_locations_for_pattern(segment, segment_load_address, resourceloadto_address, pattern_c)
+    
+def _find_resource_load_location(segment: bytes,
+                                 segment_load_address: int,
+                                 resourceloadto_address: int,
+                                 resource_id: int):
+    
+    load_locations = _find_resource_load_locations(segment, segment_load_address, resourceloadto_address)
+    return None if resource_id not in load_locations else load_locations[resource_id]
+
+def _extract_segments_in_segment(rom: N64Rom,
+                                 segment: bytes,
+                                 segment_load_address: int,
+                                 resourceloadto_pos: int,
+                                 bigtable_rom_address: int,
+                                 found_segments: list,
+                                 builder: BffiBuilder):
+    
+    load_locations = _find_resource_load_locations(segment, segment_load_address, resourceloadto_pos)
+    for segment_id, segment_load_location in load_locations.items():
+        if segment_id in found_segments:
+            continue
+
+        logger.info("segment %08x loads resource %d to 0x%08x", segment_load_address, segment_id, segment_load_location)
+        unpacked = _unpack_resource(rom, bigtable_rom_address, segment_id)
+
+        if (unpacked[0] == 0x08 and unpacked[4:8] == bytes([0,0,0,0])) is False:
+            logger.info("resource %d: not a code segment, ignoring", segment_id)
+            continue
+
+        builder.seg(segment_load_location, unpacked)
+        found_segments.append(segment_id)
+
+        _extract_segments_in_segment(rom, unpacked, segment_load_location, resourceloadto_pos, bigtable_rom_address, found_segments, builder)
+
+
 def mariotennis_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -142,38 +277,22 @@ def mariotennis_unpack(rom: N64Rom, ipc: int) -> Bffi:
         logger.error("cannot find ResourceLoadTo() in unpacked bootexe!")
         return None
 
-    logger.info("ResourceLoadTo() is at 0x%08x", entry_point+resourceloadto_pos)
+    resourceloadto_pos += entry_point
+    logger.info("ResourceLoadTo() is at 0x%08x", resourceloadto_pos)
 
-    loadresource0_pos = MARIOTENNIS_LOAD_RESOURCE_0_PATTERN.find(payload)
-    if loadresource0_pos is None:
-        logger.error("can't find code that loads resource 0")
-        return None
+    mainentry_load_address = _find_resource_load_location(payload, payload_address, resourceloadto_pos, 0)
+    sounddriver_load_address = _find_resource_load_location(payload, payload_address, resourceloadto_pos, 0x13)
 
-    loadresource0_consts = MARIOTENNIS_LOAD_RESOURCE_0_PATTERN.consts(entry_point, payload, loadresource0_pos)
-    loadresource0_xrefs  = MARIOTENNIS_LOAD_RESOURCE_0_PATTERN.xrefs(entry_point, payload, loadresource0_pos)
-    if loadresource0_xrefs["resourceloadto"].get_address() != (entry_point + resourceloadto_pos):
-        logger.error("resourceloadto mismatch. 0x%08x != 0x%08x",
-                     loadresource0_xrefs["resourceloadto"].get_address(),
-                     entry_point + resourceloadto_pos)
-        return None
-    
-    loadresource013_pos = MARIOTENNIS_LOAD_RESOURCE_013_PATTERN.find(payload)
-    if loadresource013_pos is None:
-        logger.error("can't find code that loads resource 0x13")
-        return None
-    
-    loadresource013_consts = MARIOTENNIS_LOAD_RESOURCE_013_PATTERN.consts(entry_point, payload, loadresource013_pos)
-    loadresource013_xrefs  = MARIOTENNIS_LOAD_RESOURCE_013_PATTERN.xrefs(entry_point, payload, loadresource013_pos)
-    if loadresource013_xrefs["resourceloadto"].get_address() != (entry_point + resourceloadto_pos):
-        logger.error("resourceloadto mismatch. 0x%08x != 0x%08x",
-                     loadresource0_xrefs["resourceloadto"].get_address(),
-                     entry_point + resourceloadto_pos)
+    if None in [mainentry_load_address, sounddriver_load_address]:
+        logger.error("can't find one or more load locations for bootexe code segments")
         return None
 
-    mainentry_load_address = loadresource0_consts["mainentry_load_address"].get_value()
-    engine_load_address = loadresource013_consts["engine_load_address"].get_value()
-    logger.info("mainentry stub loads to 0x%08x", mainentry_load_address)
-    logger.info("sound driver loads to 0x%08x", engine_load_address)
+    logger.info(\
+"""segments loaded from bootexe:
+- sound driver --> 0x%08x
+- main entry --> 0x%08x""",
+    sounddriver_load_address,
+    mainentry_load_address)
 
     builder = BffiBuilder()
 
@@ -189,8 +308,40 @@ def mariotennis_unpack(rom: N64Rom, ipc: int) -> Bffi:
     main_segment = _unpack_resource(rom, bigtable_rom_address, 0)
     builder.fix(mainentry_load_address, main_segment)
 
-    engine_segment = _unpack_resource(rom, bigtable_rom_address, 0x13)
-    builder.fix(engine_load_address, engine_segment)
+    found_segments = [ 0, 0x13 ]
 
+    _extract_segments_in_segment(rom,
+                                 main_segment,
+                                 entry_point,
+                                 resourceloadto_pos,
+                                 bigtable_rom_address,
+                                 found_segments,
+                                 builder)
+
+    sounddriver_segment = _unpack_resource(rom, bigtable_rom_address, 0x13)
+    builder.fix(sounddriver_load_address, sounddriver_segment)
+
+    _extract_segments_in_segment(rom,
+                                 sounddriver_segment,
+                                 sounddriver_load_address,
+                                 resourceloadto_pos,
+                                 bigtable_rom_address,
+                                 found_segments,
+                                 builder)
+    
+    # this looks only for calls to ResourceLoadTo() within each code segment,
+    # mostly for debugging and exploration. it can't catch all of them. 
+    if False:
+        for i in range(0x4FC):
+            try:
+                r = _unpack_resource(rom, bigtable_rom_address, i)
+                if r[0] != 0x08 or r[4:8] != bytes([0,0,0,0]):
+                    # not code
+                    continue
+
+                logger.info("%d looks like a code segment", i)
+                _find_resource_load_candidates(r, 0x80000000, resourceloadto_pos)
+            except:
+                continue
 
     return builder.build()

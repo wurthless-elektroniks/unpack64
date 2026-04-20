@@ -9,6 +9,11 @@ def _assert_size_limit(output, expected_output_size):
         raise RuntimeError("output exceeded expected size")
 
 def mariotennis_decompress(input: bytes):
+    if input[0] == 0:
+        # resource not compressed
+        expected_output_size = struct.unpack(">I", input[:4])[0] & 0x00FFFFFF
+        return input[4:4+expected_output_size]
+
     input_pointer = 4
     output = bytearray()
 
