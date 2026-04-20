@@ -1,11 +1,14 @@
 
 from argparse import ArgumentParser, RawTextHelpFormatter
+
 import sys
+import os
 import logging
 
 
 from tlb import tlb_try_detect_preamble
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
+from games import GAME_SPECIFIC_UNPACKERS
 from n64rom import load_rom, load_rom_from_zip
 from n64cic import get_cic
 logger = logging.getLogger(__name__)
@@ -13,28 +16,13 @@ logger = logging.getLogger(__name__)
 def _init_argparser():
     argparser = ArgumentParser(formatter_class=RawTextHelpFormatter,
                                prog='unpack64')
-
-    argparser.add_argument("--directory",
-                           default=False,
-                           action='store_true',
-                           help="Treat input path as a directory")
-
     argparser.add_argument("input",
                            nargs='?',
-                           help="Input N64 ROM (.z64, .v64, .zip)")
+                           help="Input N64 ROM (.z64, .v64, .zip) or a directory containing them")
   
     return argparser
 
-
-def rominfo_main():
-    argparser = _init_argparser()
-    args = argparser.parse_args()
-
-    if args.input is None:
-        logger.error("must specify input")
-        return
-
-    inputrom = args.input
+def dump_rominfo(inputrom: str):
     rom = None
     if inputrom.endswith(".z64") or inputrom.endswith(".v64") or inputrom.endswith(".n64"):
         rom = load_rom(inputrom)
@@ -42,11 +30,11 @@ def rominfo_main():
         rom = load_rom_from_zip(inputrom)
     else:
         logger.error("file doesn't have a valid extension, must be one of: .z64, .v64, .n64, .zip")
-        exit(1)
+        return
 
     if rom is None:
         logger.error("unable to load ROM: %s",inputrom)
-        exit(1)
+        return
 
     romhead = rom.header()
     cic = get_cic(rom)
@@ -62,6 +50,11 @@ f"""
         CRC32:     {rom.crc32():08x}
         load address/ipc:  {ipc:08x}""")
     
+    if rom.sha256() in GAME_SPECIFIC_UNPACKERS:
+        print(\
+"""
+        !! this has a game-specific unpacker registered !!""")
+
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
         _, preamble = tlb_try_detect_preamble(rom, ipc)
@@ -92,5 +85,32 @@ f"        bss: {bss[0]:08x} ~ {bss[1]:08x} ({bss[1]-bss[0]} bytes)")
         print( \
 f"        code: {ipc:08x} ~ {earliest_bss_loc:08x} ({earliest_bss_loc-ipc} bytes)")
 
+
+
+def rominfo_main():
+    argparser = _init_argparser()
+    args = argparser.parse_args()
+
+    if args.input is None:
+        logger.error("must specify input")
+        return
+
+    inputrom = args.input
+    if os.path.isdir(inputrom):
+        files_in_dir = os.listdir(inputrom)
+        files = []
+        for filename in files_in_dir:
+            if filename.endswith("[!].z64.zip") or \
+               filename.endswith("[!].z64") or \
+               filename.endswith("[!].v64.zip") or \
+               filename.endswith("[!].v64"):
+                files.append(os.path.join(inputrom, filename))
+        
+        files.sort()
+        for file in files:
+            dump_rominfo(file)
+    else:
+        dump_rominfo(inputrom)
+    
 if __name__ == "__main__":
     rominfo_main()

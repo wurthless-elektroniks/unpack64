@@ -6,6 +6,7 @@ from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
+from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -222,6 +223,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Mario Tennis 64 (J) [!]
     "b8d053a22ea2764904f32ed19daa60552e1bca28e1f1c074f4e4c59c91b9fe47": mariotennis_unpack,
+
+    # ------------------------------------------------------
+    #
+    # Gauntlet Legends
+    # TLB + zlib bootloader + filesystem combo!!
+    #
+    # ------------------------------------------------------
+
+    # Gauntlet Legends (U) [!]
+    "1cc9cb70686b4785c46fff337ded30a2e1f83f2d63768ad8041e978ad0379ec9": gauntlet_unpack,
+
+    # Gauntlet Legends (J) [!]
+    "4e27d82c476bfaa48172aa6230b2d5beb66a7f326d915b1e2e4ad0ccf7736d24": gauntlet_unpack,
+
+    # Gauntlet Legends (E) [!]
+    "344a04c993618acdbf01f8bc7283874d77ebcc78c534a49f3ac2e38ca61e38a9": gauntlet_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
