@@ -29,38 +29,88 @@ from mips import disassemble_jump_imm26_target
 
 logger = logging.getLogger(__name__)
 
+EXTREMEG_UNPACKER_PATTERN = SignatureBuilder() \
+    .pattern([
+    # LZSS decompression is done entirely on the stack
+    0x27, 0xbd, 0xef, 0xd0,     # +0x00 addiu      sp,sp,-0x1030
+    0xaf, 0xbf, 0x10, 0x28,     # +0x04 sw         ra,local_8(sp)
+    
+    # loading registers for PIF communications
+    0x3c, 0x03, 0xa4, 0x80,     # +0x08 lui        v1,0xa480
+    0x34, 0x63, 0x00, 0x18,     # +0x0C ori        v1,v1,0x18
+    0x3c, 0x05, 0xbf, 0xc0,     # +0x10 lui        a1,0xbfc0
+    0x34, 0xa5, 0x07, 0xfc,     # +0x14 ori        a1,a1,0x7fc
+    
+    # wait for PIF to not be busy, then read status
+    0x8c, 0x62, 0x00, 0x00,     # +0x18 lw         v0,0x0(v1)=>DAT_a4800018
+    0x30, 0x42, 0x00, 0x03,     # +0x1C andi       v0,v0,0x3
+    0x14, 0x40, 0xff, 0xfd,     # +0x20 bne        v0,zero,LAB_8004b4b0
+    0x00, 0x00, 0x00, 0x00,     # +0x24 _nop
+    0x8c, 0xa4, 0x00, 0x00,     # +0x28 lw         a0,0x0(a1)=>DAT_bfc007fc
+
+    # wait again for PIF to not be busy, then write command 0x08
+    # so that the PIF will not lock the system up while we decompress the payload
+    0x8c, 0x62, 0x00, 0x00,     # +0x2C lw         v0,0x0(v1)=>DAT_a4800018
+    0x30, 0x42, 0x00, 0x03,     # +0x30 andi       v0,v0,0x3
+    0x14, 0x40, 0xff, 0xfd,     # +0x34 bne        v0,zero,LAB_8004b4c4
+    0x34, 0x82, 0x00, 0x08,     # +0x38 _ori       v0,a0,0x8
+    0xac, 0xa2, 0x00, 0x00,     # +0x3C 0sw         v0,0x0(a1)=>DAT_bfc007fc
+
+    # now what we actually want: the boot executable.
+    # we have it in RAM already, so it gets copied to higher RAM
+    # and decompressed to where we read it from in the first place.
+    # rest of this function can be thrown in the trash.
+    0x00, 0x00, 0x28, 0x21,         # +0x40 clear      a1
+    0x3c, 0x04, 0x80, WILDCARD,     # +0x44 lui        a0,0x8025
+    0x24, 0x84, WILDCARD, WILDCARD, # +0x48 addiu      a0,a0,-0x4760
+    0x3c, 0x03, 0x80, WILDCARD,     # +0x4C lui        v1,0x8005      <-- payload lives here
+    0x24, 0x63, WILDCARD, WILDCARD, # +0x50 addiu      v1,v1,-0x4760
+    ]) \
+    .const_op32_hi16("payload_address", 0x4C) \
+    .const_op32_lo16("payload_address", 0x50) \
+    .build()
+
 def extremeg_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # standard preamble with a small bss section which the unpacker probably needs
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
         return None
     
-    # TODO: remove all this hardcoding...
+    if EXTREMEG_UNPACKER_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
+        return None
+    
+    logger.info("found Extreme-G LZSS unpacker")
 
-    magic, uncompressed, compressed = struct.unpack(">III",rom.read_bytes(0x14AC, 12))
+    consts = EXTREMEG_UNPACKER_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
+    payload_address = consts["payload_address"].get_value()
+
+    logger.info("payload will load to 0x%08x", payload_address)
+
+    payload_offset = payload_address - ipc
+    magic, uncompressed, compressed = struct.unpack(">III", rom.boot_exe()[payload_offset + 0x0C:payload_offset + 0x0C + 0x0C])
     if magic != 0x4C5A5353:
         logger.error("invalid LZSS magic word")
         return None
-    
     logger.info("uncompressed size %d, compressed size %d", uncompressed, compressed)
 
-    lzss_data = rom.read_bytes(0x14AC + 12, compressed)
+    lzss_data = rom.boot_exe()[payload_offset + 0x0C + 0x0C:payload_offset + 0x0C + 0x0C + compressed]
     uncompressed_data = lzss_decompress(lzss_data)
 
     if len(uncompressed_data) != uncompressed:
         logger.error("uncompressed size mismatch. expected %d, got %d", uncompressed, len(uncompressed_data))
         return None
     
-    builder = BffiBuilder()
-    builder.rom_hash(rom.sha256())
-
-    for start_addr,end_addr in preamble.bss_sections():
-        logger.info("bss: %08x - %08x", start_addr, end_addr)
-        builder.bss(start_addr,end_addr-start_addr)
+    real_preamble = identify_preamble(uncompressed_data, payload_address)
+    if real_preamble is None:
+        logger.error("real preamble was not recognized")
+        return None
     
-    builder.fix(ipc, rom.boot_exe()[:0x8004b8a0-ipc])
-    builder.fix(0x8004b8a0, uncompressed_data)
-    builder.initial_program_counter(0x8004B8A0)
-    builder.initial_stack_pointer(0x803FFFF0)
+    builder = BffiBuilder()
+    builder.initial_program_counter(real_preamble.crt_entry_point())
+    builder.initial_stack_pointer(real_preamble.initial_stack_pointer())
+    for bss_start, bss_end in real_preamble.bss_sections():
+        builder.bss(bss_start, bss_end-bss_start)
+
+    builder.fix(payload_address, uncompressed_data)
 
     return builder.build()

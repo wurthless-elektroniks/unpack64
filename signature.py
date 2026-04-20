@@ -332,6 +332,9 @@ class Signature():
     def andmask(self):
         return bytes(self._andmask)
     
+    def size(self):
+        return len(self._bits)
+    
     def tail_bits(self) -> bytes | None:
         if self._tail_bits is None:
             return None

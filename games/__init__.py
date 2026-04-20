@@ -118,10 +118,18 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
     "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2us_unpack,
 
-    #
+    # ------------------------------------------------------
     # Extreme-G LZSS packer
-    #
+    # ------------------------------------------------------
+    
+    # Extreme-G (U) [!]
     "9e67bc574e40ef273759d587972655003d5213e625bfa68d3071dc9782d2071c": extremeg_unpack,
+
+    # Extreme-G (J) [!]
+    "a4784b478525cef90be5576a1acfde1ca23bac254535952811f22385d5e03601": extremeg_unpack,
+
+    # Extreme-G (E) (M5) [!]
+    "45cfbf079b7c5777ee47f3b86c643eeeb406acb2a84c95ec4ab2b5e2d754107b": extremeg_unpack,
 
     # ------------------------------------------------------
     # Rareware DEFLATE-based unpacker (zlib or gzip)

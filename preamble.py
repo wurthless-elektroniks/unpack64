@@ -574,6 +574,7 @@ ALT_LIBULTRA_PREAMBLE_TYPE_2 = SignatureBuilder() \
         0x01, 0x09, 0x08, 0x2b, # +$4C sltu at,t0,t1
         0x14, 0x20, 0xff, 0xfd, # +$50 bne at,zero,...  - clear bss 4 bytes at a time
         0xAD, 0x00, 0xFF, 0xFC, # +$54 sw zero,-0x04(t0)
+
         0x08, 0x00, 0x00, 0x00, # +$58 jal crt_entry (also catches j opcodes)
         0x00, 0x00, 0x00, 0x00, # +$5C nop
     ])) \
@@ -721,9 +722,9 @@ ALT_LIBULTRA_PREAMBLE_TYPE_4 = SignatureBuilder() \
         0x01, 0x09, 0x08, 0x2b, # +$4C sltu at,t0,t1
         0x14, 0x20, 0xff, 0xfd, # +$50 bne at,zero,...  - clear bss 4 bytes at a time
         0xAD, 0x00, 0xFF, 0xFC, # +$54 sw zero,-0x04(t0)
+
         0x3C, 0x1C, 0x00, 0x00, # +$58 lui $gp,0x80xx
         0x27, 0x9C, 0x00, 0x00, # +$5C addiu $gp,$gp,#### - points somewhere within bss, probably some compiler enabled this optimization
-
         0x08, 0x00, 0x00, 0x00, # +$60 jal crt_entry (also catches j opcodes)
         0x00, 0x00, 0x00, 0x00, # +$64 nop
     ])) \
@@ -843,13 +844,94 @@ def _ident_alt_libultra_type_5(bootexe: bytearray, ipc: int) -> Preamble | None:
     preamble.add_bss(bss_start_address, bss_start_address + bss_size)
     return preamble
 
+# Extreme-G, once unpacked, has way too many BSS init loops.
+# This makes life easier. I hope.
+def _ident_alt_libultra_many_bss(bootexe: bytearray, ipc: int) -> Preamble | None:
+    set_stackpointer_pattern = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x1D, 0x80, WILDCARD, # +$00 lui sp,0x80xx    - set initial stack pointer, typically to 0x803FFFF0 at end of RDRAM
+        0x27, 0xBD, WILDCARD, WILDCARD, # +$04 ori sp,sp,#### / addiu sp,sp,####
+    ]) \
+    .modify_andmask(0x04, bytes([0xEC])) \
+    .const_op32_hi16("initial_sp", 0x00) \
+    .const_op32_lo16("initial_sp", 0x04) \
+    .build()
+
+    if set_stackpointer_pattern.compare(bootexe) is False:
+        return None
+    
+    set_stackpointer_consts = set_stackpointer_pattern.consts(ipc, bootexe)
+    initial_sp = set_stackpointer_consts["initial_sp"].get_value()
+    offset = set_stackpointer_pattern.size()
+
+    bss_clear_pattern = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x08, 0x80, WILDCARD, # +$08 lui t0,0x80xx
+        0x25, 0x08, WILDCARD, WILDCARD, # +$0C addiu t0,t0,#### - BSS start position
+        0x3C, 0x09, 0x80, WILDCARD, # +$10 lui t1,0x80xx
+        0x25, 0x29, WILDCARD, WILDCARD, # +$14 addiu t0,t0,#### - BSS end position
+        0x11, 0x09, 0x00, 0x05, # +$18 beq t0,t1,... - do not initialize BSS if start/end pos are the same (why? they never should be...)
+        0x00, 0x00, 0x00, 0x00, # +$1C nop
+        0x25, 0x08, 0x00, 0x04, # +$20 addiu t0,t0,4
+        0x01, 0x09, 0x08, 0x2b, # +$24 sltu at,t0,t1
+        0x14, 0x20, 0xff, 0xfd, # +$28 bne at,zero,...  - clear bss 4 bytes at a time
+        0xAD, 0x00, 0xFF, 0xFC, # +$2C sw zero,-0x04(t0)
+    ]) \
+    .const_op32_hi16("bss_start", 0x00) \
+    .const_op32_lo16("bss_start", 0x04) \
+    .const_op32_hi16("bss_end",   0x08) \
+    .const_op32_lo16("bss_end",   0x0C) \
+    .build()
+
+    bss_sections = []
+    while True:
+        if bss_clear_pattern.compare(bootexe, offset) is False:
+            break
+        bss_consts = bss_clear_pattern.consts(ipc, bootexe, offset)
+        bss_start = bss_consts["bss_start"].get_value()
+        bss_end = bss_consts["bss_end"].get_value()
+
+        if bss_start != bss_end:
+            bss_sections.append( (bss_start, bss_end) )
+        offset += bss_clear_pattern.size()
+
+    jump_to_entrypoint_pattern = SignatureBuilder() \
+    .pattern([
+        0x08, WILDCARD, WILDCARD, WILDCARD,
+        0x00, 0x00, 0x00, 0x00
+    ]) \
+    .modify_andmask(0x00, bytes([0xFB])) \
+    .xref_j_imm26("entry_point", 0) \
+    .build()
+
+    if jump_to_entrypoint_pattern.compare(bootexe, offset) is False:
+        return None
+    
+    if not bss_sections:
+        return None
+
+    xrefs = jump_to_entrypoint_pattern.xrefs(ipc, bootexe, offset)
+    entry_point = xrefs["entry_point"].get_address()
+    offset += jump_to_entrypoint_pattern.size()
+
+    preamble = Preamble("libultra alt. (nustd?), generic",
+                    initial_sp,
+                    entry_point,
+                    offset)
+    
+    for bss_start, bss_end in bss_sections:
+        preamble.add_bss(bss_start, bss_end)
+
+    return preamble
+
 def _ident_nustd(bootexe: bytearray, ipc: int) -> Preamble | None:
     return _try_ident_preamble([
         _ident_alt_libultra_type_1,
         _ident_alt_libultra_type_2,
         _ident_alt_libultra_type_3,
         _ident_alt_libultra_type_4,
-        _ident_alt_libultra_type_5
+        _ident_alt_libultra_type_5,
+        _ident_alt_libultra_many_bss,
     ], bootexe, ipc)
 
 # ------------------------------------------------------------------------------------------
