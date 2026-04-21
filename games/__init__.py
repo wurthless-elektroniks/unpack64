@@ -6,6 +6,7 @@ from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
+from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -239,6 +240,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Gauntlet Legends (E) [!]
     "344a04c993618acdbf01f8bc7283874d77ebcc78c534a49f3ac2e38ca61e38a9": gauntlet_unpack,
+
+    # ------------------------------------------------------
+    #
+    # Forsaken 64
+    # Semi-custom preamble and RNC-based overlay loader
+    #
+    # ------------------------------------------------------
+
+    # Forsaken 64 (U) [!]
+    "e323fa5e482244ac7b520fd09393c59ddfca6be0666fbb1325554324a945abe0": forsaken_unpack,
+
+    # Forsaken 64 (E) (M4) [!]
+    "a94eb83c9e68906d1cfb320bb3d07c74b74f6fa1ac9c57d291e5801cc15e9289": forsaken_unpack,
+
+    # Forsaken 64 (G) [!]
+    "bbe52d306ec9382629e3cc8c6cc14dcf7c9052c89ce3c0ad6172c8975d77795f": forsaken_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

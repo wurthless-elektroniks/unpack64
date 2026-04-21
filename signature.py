@@ -10,7 +10,10 @@ import struct
 import logging
 
 
-from mips import disassemble_imm16_rt_rs_target, disassemble_jump_imm26_target
+from mips import disassemble_imm16_rt_rs_target, \
+                 disassemble_jump_imm26_target, \
+                 disassemble_load_store_imm16
+                 
 
 logger = logging.getLogger(__name__)
 
@@ -177,9 +180,17 @@ class UnresolvedConstOp32Lo16(UnresolvedConstSplitHalves):
     def resolve_for(self, baseaddr, buffer, resolved_xref):
         bytecode = buffer[self._offset:self._offset+4]
         dest = disassemble_imm16_rt_rs_target(baseaddr + self._offset, bytecode)
-        if dest is None:
-            _raise_16bit_imm__opcode_error(baseaddr, self._offset, bytecode)
-        resolved_xref.set_lo16(dest)
+        if dest is not None:
+            resolved_xref.set_lo16(dest)
+            return
+
+        dest = disassemble_load_store_imm16(baseaddr + self._offset, bytecode)
+        if dest is not None:
+            resolved_xref.set_lo16(dest)
+            return
+
+        _raise_16bit_imm__opcode_error(baseaddr, self._offset, bytecode)
+        
 
 class UnresolvedConstOp32Imm16(UnresolvedConst):
     def create_resolved(self) -> SignatureResolvedXref:
