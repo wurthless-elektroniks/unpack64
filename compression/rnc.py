@@ -7,6 +7,7 @@ and a shitton of Amiga/other platform games.
 Based in large part on:
 - https://github.com/lab313ru/rnc_propack_source/blob/master/main.c
 - https://moddingwiki.shikadi.net/wiki/Rob_Northern_Compression (beware, it has typos)
+- https://segaretro.org/Rob_Northen_compression
 """
 
 import logging
@@ -226,8 +227,6 @@ def _read_huffman(table: list, bitstream: _RncBitStream) -> int | None:
     logger.error("failed to find leaf! bits on buffer were %04x",bitstream.bits())
     return None
 
-# ------------------------------------------------------------------------------------------------
-
 def _unpack_type_1(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
     rnc_header = struct.unpack(">IIIHHH", buffer[0:18])
     magic = rnc_header[0]
@@ -310,8 +309,191 @@ def _unpack_type_1(buffer: bytes, skipping_input_checksum: bool = False) -> byte
 
     return out_buffer
 
+# ------------------------------------------------------------------------------------------------
+#
+# RNC Method 2
+#
+# ------------------------------------------------------------------------------------------------
+class _RncM2Bitstream:
+    def __init__(self, data: bytes):
+        self._data = data
+        self._byte_offset = 0
+        self._bits_on_buffer = 0
+        self._bit_buffer = 0
+
+    def read_byte(self):
+        if self._byte_offset < len(self._data):
+            self._byte_offset += 1
+            return self._data[self._byte_offset-1]
+        
+        logger.warning("byte_offset is at or past EOF")
+        return 0
+
+    def read_bits(self, count: int):
+        bits_out = 0
+
+        for _ in range(count):
+            if self._bits_on_buffer == 0:
+                d = self._data[self._byte_offset] if self._byte_offset < len(self._data) else 0
+                self._bit_buffer = d
+                self._bits_on_buffer = 8
+
+                self._byte_offset += 1
+
+            bits_out <<= 1
+
+            if (self._bit_buffer & 0x80) != 0:
+                bits_out |= 1
+
+            self._bit_buffer <<= 1
+            self._bits_on_buffer -= 1
+
+        return bits_out
+
+    def eof(self):
+        return self._byte_offset >= len(self._data)
+
+def _decode_length_field(bitstream: _RncM2Bitstream):
+    two_bits = bitstream.read_bits(2)
+
+    if two_bits == 0b00:
+        return 4
+    if two_bits == 0b10:
+        return 5
+
+    three_bits = (two_bits << 1) | bitstream.read_bits(1)
+    
+    # if 111 is encountered in the length field, then this is actually
+    # a "get literal bytes" operation
+    bitmap = {
+        0b010: 6,
+        0b011: 7,
+        0b110: 8,
+        0b111: -1
+    }
+    return bitmap[three_bits]
+
+
+# same as decode_match_offset() in rnc.c, but this is purely responsible
+# for decoding the bitfield
+def _decode_distance_field(bitstream: _RncM2Bitstream):
+    # if first bit is 0, then distance is 0 too
+    if bitstream.read_bits(1) == 0:
+        return 0
+
+    base_distance = bitstream.read_bits(1)
+    if bitstream.read_bits(1) != 0:
+        base_distance = (base_distance << 1) | bitstream.read_bits(1) | 4
+
+        if bitstream.read_bits(1) == 0:
+            base_distance = (base_distance << 1) | bitstream.read_bits(1)
+
+    elif base_distance == 0:
+        base_distance = bitstream.read_bits(1) + 2
+
+    return base_distance
+
+def _unpack_type_2(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
+    rnc_header = struct.unpack(">IIIHHH", buffer[0:18])
+    magic = rnc_header[0]
+    if magic != 0x524E4302:
+        return None
+
+    uncompressed_length = rnc_header[1]
+    compressed_length   = rnc_header[2]
+    uncompressed_crc16  = rnc_header[3]
+    compressed_crc16    = rnc_header[4]
+    _unused = rnc_header[5]
+
+    if skipping_input_checksum is False:
+        actual_compressed_crc16 = crc16(buffer, 18, compressed_length)
+        if actual_compressed_crc16 != compressed_crc16:
+            logging.error("RNC CRC-16 mismatch on compressed data: expected %04x, got %04x", compressed_crc16, actual_compressed_crc16)
+            return None
+
+    bitstream = _RncM2Bitstream(buffer[18:])
+
+    # ignore first 2 bits, same as RNC type 1
+    bitstream.read_bits(2)
+
+    output = bytearray(uncompressed_length)
+    output_pointer = 0
+
+    while not bitstream.eof() and output_pointer < len(output):
+
+        # while a chunk is still being processed:
+        while True:
+            if bitstream.read_bits(1) == 0:
+                # 0: write literal byte
+                output[output_pointer] = bitstream.read_byte()
+                output_pointer += 1
+                continue
+            
+            # first bit was 1, check second bit.
+            if bitstream.read_bits(1) == 0:
+                # if 0, this is either a length/distance operation
+                # or a get literal bytes operation
+                length = _decode_length_field(bitstream)
+
+                if length == -1:
+                    # 10111: get literal bytes
+                    byte_count = (bitstream.read_bits(4) * 4) + 12
+                    for _ in range(byte_count):
+                        output[output_pointer] = bitstream.read_byte()
+                        output_pointer += 1
+                else:
+                    distance = _decode_distance_field(bitstream)
+                    backseek = ((distance * 256) + bitstream.read_byte()) + 1
+                    for _ in range(length):
+                        output[output_pointer] = output[output_pointer-backseek]
+                        output_pointer += 1
+
+                continue
+            
+            # second bit was 1, so we have 11x so far.
+            # all operations past this point are backseek-related
+            # so we use a common code path
+            match_count  = None
+            match_offset = None
+
+            if bitstream.read_bits(1) == 0:
+                # 110: move 2 bytes from X+1
+                match_count = 2
+                match_offset = bitstream.read_byte() + 1
+            else:
+                if bitstream.read_bits(1) == 0:
+                    # get 3 bytes from (Distance*256)+X+1
+                    match_count = 3
+                else:
+                    # 0b1111 + distance field
+                    x = bitstream.read_byte()
+                    
+                    # if X = 0, we've hit the end of this chunk.
+                    # break from this subloop
+                    if x == 0:
+                        bitstream.read_bits(1)
+                        break
+                    match_count = x + 8
+                
+                distance = _decode_distance_field(bitstream)
+                match_offset = ((distance * 256) + bitstream.read_byte()) + 1
+
+            for _ in range(match_count):
+                output[output_pointer] = output[output_pointer-match_offset]
+                output_pointer += 1
+
+    actual_uncompressed_crc16 = crc16(output, size=uncompressed_length)
+    if actual_uncompressed_crc16 != uncompressed_crc16:
+        logging.error("RNC decompressed CRC-16 mismatch: expected %04x, got %04x", uncompressed_crc16, actual_uncompressed_crc16)
+        return None
+
+    return output
+
 def rnc_unpack(buffer: bytes, skipping_input_checksum: bool = False)  -> bytes | None:
     if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x01:
         return _unpack_type_1(buffer, skipping_input_checksum=skipping_input_checksum)
+
+    if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x02:
+        return _unpack_type_2(buffer, skipping_input_checksum=skipping_input_checksum)
 
     return None
