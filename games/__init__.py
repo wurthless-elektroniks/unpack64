@@ -4,6 +4,7 @@ Game-specific unpacker drivers.
 
 from .bam import bam99_unpack
 from .ecwwwf import ecwwf_unpack
+from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
 from .forsaken import forsaken_unpack
@@ -256,6 +257,34 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Forsaken 64 (G) [!]
     "bbe52d306ec9382629e3cc8c6cc14dcf7c9052c89ce3c0ad6172c8975d77795f": forsaken_unpack,
+
+    # ------------------------------------------------------
+    # Edge of Reality games using the ERZ (custom RNC) unpacker
+    # ------------------------------------------------------
+
+    # Monster Truck Madness 64 (U) [!]
+    "52501f827a677df01ba3861b1f4616c7e6bb47dc000e174267c8fbed9e4ae3dd": erz_unpack,
+
+    # Monster Truck Madness 64 (E) [!]
+    "eb84ef801d3723c3709fc62b5551c5cc83887015d4831392039e99f236eb0c76": erz_unpack,
+
+    # Spider-Man (U) [!]
+    "feff90ed1201c91ff167d66958048e61c192c9d6a756ddb98f799017ac9cd25c": erz_unpack,
+
+    # Tony Hawk's Pro Skater (U) (V1.0) [!]
+    "f96e1688a360214844421a230a782a0c0215dddfab81f1bfedade0364648ee52": erz_unpack,
+
+    # Tony Hawk's Pro Skater (E) [!]
+    "10eb3aa1501d8172a711c4bc939fec65afd1f2d79f51e11c59235ca4c29f3585": erz_unpack,
+
+    # Tony Hawk's Pro Skater 2 (U) [!]
+    "6ac38612aaae84f8bba22a33a165c17fba3072b16999edcc9a86ab726008d726": erz_unpack,
+
+    # Tony Hawk's Pro Skater 2 (E) [!]
+    "1f675f4a3c73d4e985fb72764a80a6a2b28fd888152d438efcfe629d0d80180c": erz_unpack,
+
+    # Tony Hawk's Pro Skater 3 (U)
+    "93c8a1be89390ef27e5f2da709ca16c9a24936538766c6774640cf534c9d2aee": erz_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
