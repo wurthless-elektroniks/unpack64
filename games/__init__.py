@@ -15,6 +15,7 @@ from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
                     chef_unpack
 from .ubisoft import ray2us_unpack
+from .uso import uso_unpack
 
 
 # points hash -> unpacker function.
@@ -285,6 +286,16 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Tony Hawk's Pro Skater 3 (U)
     "93c8a1be89390ef27e5f2da709ca16c9a24936538766c6774640cf534c9d2aee": erz_unpack,
+
+    # ------------------------------------------------------
+    # "USO" dynamic loader that 1080 Snowboarding uses
+    # ------------------------------------------------------
+
+    # 1080 Snowboarding (JU) (M2) [!]
+    "5e9d7168e5786ba1bd4b643431ba7100ff3d7a09e558acae15438d426c0f34df": uso_unpack,
+
+    # 1080 Snowboarding (E) (M4) [!]
+    "a5d47b9b21bc2c234a0e5c8a1f7eb0e893a914e17a0755318b48c5ad15b7d13c": uso_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

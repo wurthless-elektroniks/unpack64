@@ -36,8 +36,9 @@ from enum import Enum
 import logging
 import struct
 
+from bffi import BffiBuilder
 from n64rom import N64Rom
-from preamble import identify_preamble
+from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
 
 logger = logging.getLogger(__name__)
@@ -60,13 +61,13 @@ class USORelocType(Enum):
     upper 6 bits to form the final instruction.
     '''
 
-    MIPS_HI16   = 2
+    MIPS_HI16   = 3
     '''
     hi16 instruction; containing the upper 16 bits of a 32 bit address.
     Typically a lui instruction.
     '''
 
-    MIPS_LO16   = 3
+    MIPS_LO16   = 2
     '''
     lo16 instruction; containing the lower 16 bits of a 32 bit address.
     Typically an ori or addiu instruction.
@@ -176,12 +177,14 @@ class USOSymbolType(Enum):
     '''
     Functionally identical to GLOBAL_A.
     '''
-
 class USORelocEntry:
     def __init__(self, entry_bytes: bytes):
         self._word_a, \
         self._offset, \
         self._original_instruction = struct.unpack(">III", entry_bytes)
+
+    def serialize(self):
+        return struct.pack(">III", self._word_a, self._offset, self._original_instruction)
 
     def symbol_id(self):
         '''
@@ -189,10 +192,17 @@ class USORelocEntry:
         '''
         return self._word_a >> 4
     
-    def wired(self):
+    def type(self) -> USORelocType:
+        return USORelocType(self._word_a & 7)
+
+    def wired(self, new_wired: bool | None = None):
         '''
         Whether the reloc has been applied or not.
         '''
+        if new_wired is not None:
+            self._word_a &= ~(8)
+            self._word_a |= 8 if new_wired is True else 0
+
         return (self._word_a & 8) != 0
 
     def offset(self):
@@ -202,7 +212,7 @@ class USORelocEntry:
         '''
         return self._offset
     
-    def original_instruction(self):
+    def original_instruction(self, new_original_instruction: int | None = None):
         '''
         If this reloc is wired, then this contains the original instruction,
         which we can drop back into place when we unload a DLL that the reloc
@@ -210,13 +220,23 @@ class USORelocEntry:
 
         If this reloc is not wired, it typically contains 1 (just an integer).
         '''
+        if new_original_instruction is not None:
+            self._original_instruction = new_original_instruction
+
         return self._original_instruction
 
 class USOSymbolEntry:
     def __init__(self, entry_bytes: bytes):
         self._word_a, self._offset, self._word_c = struct.unpack(">III", entry_bytes)
 
-    def wired(self):
+    def serialize(self):
+        return struct.pack(">III", self._word_a, self._offset, self._word_c)
+
+    def wired(self, new_wired: bool | None = None):
+        if new_wired:
+            self._word_a &= ~(0x00080000)
+            self._word_a |= 0x00080000 if new_wired else 0
+
         return ((self._word_a >> 16) & 8) != 0
     
     def symbol_type(self) -> USOSymbolType:
@@ -230,12 +250,15 @@ class USOSymbolEntry:
             return None
         return USOFilesystemEntryType((self._word_a >> 16) >> 4)
 
-    def offset(self):
+    def offset(self, new_offset: int | None = None):
         '''
         If entry is not wired and is a local, this is the offset within the section.
         If entry is not wired and is a global, this is the offset of that symbol (typically 0).
         If entry is wired, this is the absolute address of the symbol in memory.
         '''
+        if new_offset is not None:
+            self._offset = new_offset
+
         return self._offset
     
     def remote_file_id(self) -> int | None:
@@ -284,40 +307,34 @@ class USOFile:
     def load_order(self):
         return self._load_order
 
+# ------------------------------------------------------------
+
+def sign_extend_imm16_value(opcode: int) -> int:
+    return struct.unpack(">hh", struct.pack(">I", opcode))[1]
+
 def _read_filesystem_header(rom: N64Rom, read_pointer: int) -> tuple[int,USOFilesystemEntryType,int,int]:
     entry = rom.read_bytes(read_pointer, 0x0C)
     read_pointer += 0x0C
     entry_type, num_bytes, something = struct.unpack(">III", entry)
     return read_pointer, USOFilesystemEntryType(entry_type), num_bytes, something
 
-def _dump_relocs(reloc_section: bytes, symbols: list):
-    for i in range( int(len(reloc_section) / 12) ):
-        reloc_entry = reloc_section[i*12:(i+1)*12]
-        control_word, offset, original_instruction = struct.unpack(">III", reloc_entry)
-
-        logger.info("\t\treloc: sym %08x type %s offset %08x orig %08x",
-                    control_word >> 4,
-                    USORelocType(control_word & 7),
-                    offset,
-                    original_instruction)
-        
-        if symbols is not None:
-            symbol = symbols[control_word >> 4]
-            logger.info("\t\t\tassoc symbol: valid=%s sid %02x offset %08x import=%s id %08x",
-                        symbol.entry_valid(),
-                        symbol.section_id(),
-                        symbol.offset(),
-                        symbol.is_import(),
-                        symbol.id())
-
-
 # 80002650 parses the symbol section
-def _parse_symbols(symbol_section: bytes) -> bytes:
+def _parse_symbols(symbol_section: bytes) -> list[USOSymbolEntry]:
     symbols = []
 
     for i in range( int(len(symbol_section) / 12) ):
         symbol_entry = symbol_section[i*12:(i+1)*12]
         symbol = USOSymbolEntry(symbol_entry)
+        symbols.append(symbol)
+
+    return symbols
+
+def _parse_relocs(symbol_section: bytes) -> list[USORelocEntry]:
+    symbols = []
+
+    for i in range( int(len(symbol_section) / 12) ):
+        symbol_entry = symbol_section[i*12:(i+1)*12]
+        symbol = USORelocEntry(symbol_entry)
         symbols.append(symbol)
 
     return symbols
@@ -415,6 +432,214 @@ def _extract_all_files(rom: N64Rom,
 
         offset += (4*5)
 
+def _wire_local_symbols(file: USOFile,
+                        base_addresses = {}):
+    
+    symbols = _parse_symbols(file.section(USOFilesystemEntryType.SYM))
+
+    for symbol in symbols:
+        if symbol.wired():
+            continue
+
+        if symbol.is_import():
+            continue
+            
+        symbol_type = symbol.symbol_type()
+        if symbol_type == USOSymbolType.UNUSED:
+            continue
+
+        # symbol is in memory, so mark it wired
+        symbol.wired(True)
+
+        # parser does nothing else with this kind of symbol;
+        # it just marks it wired then abandons it
+        if symbol_type == USOSymbolType.UNWIRED:
+            continue
+
+        local_section_type = symbol.local_section_type()
+        if local_section_type not in base_addresses:
+            raise RuntimeError("symbol points to local section that doesn't exist!")
+
+        new_offset = symbol.offset() + base_addresses[local_section_type]
+        logger.debug("wire symbol: %s+0x%08x = 0x%08x",
+                     local_section_type.name,
+                     symbol.offset(),
+                     new_offset)
+
+        symbol.offset(new_offset)
+
+    new_symbol_section = bytearray()
+    for symbol in symbols:
+        new_symbol_section += symbol.serialize()
+    
+    file.section(USOFilesystemEntryType.SYM, new_symbol_section)
+
+
+def _relocate_file(file: USOFile,
+                   files: list[USOFile]):
+
+    symbol_blob = file.section(USOFilesystemEntryType.SYM)
+    if symbol_blob is None:
+        raise RuntimeError("file {file.path()} has no symbols loaded")
+
+    symbols = _parse_symbols(symbol_blob)
+
+    for reloc_section_type, section_type in [
+                            (USOFilesystemEntryType.TEXT_RELOC, USOFilesystemEntryType.TEXT),
+                            (USOFilesystemEntryType.DATA_RELOC, USOFilesystemEntryType.DATA),
+                            (USOFilesystemEntryType.RODATA_RELOC, USOFilesystemEntryType.RODATA)
+                            ]:
+        reloc_section  = file.section(reloc_section_type)
+        if reloc_section is None:
+            continue
+        
+        section = file.section(section_type)
+        if section is None:
+            raise RuntimeError("orphaned reloc section")
+
+        writable_section = bytearray(section)
+
+        last_hi16_offset      = 0
+        last_hi16_instruction = 0
+        last_hi16_relocation  = None
+
+        relocs = _parse_relocs(reloc_section)
+        for reloc in relocs:
+            symbol_id = reloc.symbol_id()
+            if (0 <= symbol_id <= len(symbols)) is False:
+                raise RuntimeError("symbol {symbol_id} is out of bounds!!")
+            symbol = symbols[symbol_id]
+
+            if symbol.is_import():
+                if (0 <= symbol.remote_file_id() < len(files)) is False:
+                    raise RuntimeError(f"symbol import file index out of range ({symbol.remote_file_id()})")
+            
+                # skip imports because nothing else is loaded yet
+                continue
+
+            if symbol.wired() is False:
+                raise RuntimeError("symbol should have been wired by now!")
+                
+            symbol_type = symbol.symbol_type()
+            if symbol_type == USOSymbolType.UNUSED:
+                continue
+
+            if symbol_type == USOSymbolType.UNWIRED:
+                continue
+
+            # the symbol is wired, so we'll have its absolute address
+            symbol_target_offset  = symbol.offset()
+            reloc_offset = reloc.offset()
+
+            original_instruction = struct.unpack(">I",writable_section[reloc_offset:reloc_offset+4])[0]
+            patched_instruction: int = None
+            reloc_type = reloc.type()
+            if reloc_type == USORelocType.MIPS_JUMP_IMM_26:
+                hibits = original_instruction & 0xFC000000
+                lo26   = original_instruction & 0x03FFFFFF
+
+                unpatched_offset = (lo26 << 2)
+                patched_offset = unpatched_offset + (symbol_target_offset & 0x03FFFFFF)
+
+                patched_instruction = hibits | (patched_offset >> 2)
+
+                logger.debug("mips imm26: change %08x to %08x / offset 0x%08x -> 0x%08x",
+                                original_instruction,
+                                patched_instruction,
+                                unpatched_offset,
+                                patched_offset + 0x80000000)
+
+            elif reloc_type == USORelocType.MIPS_IMM_32:
+                patched_instruction = original_instruction + symbol_target_offset
+                logger.debug("mips imm32: change %08x to %08x",
+                    original_instruction,
+                    patched_instruction)
+                
+            elif reloc_type == USORelocType.MIPS_HI16:
+                # hitting a hi16 means a lo16 must follow or it will
+                # never be applied
+                last_hi16_offset = reloc_offset
+                
+                # the hi16 instruction will "latch" until another hi16 is found.
+                last_hi16_instruction = original_instruction
+                last_hi16_relocation  = reloc
+
+                logger.debug("mips hi16: delaying")
+                continue
+
+            elif reloc_type == USORelocType.MIPS_LO16:
+                imm16 = original_instruction & 0xFFFF
+
+                last_hi16_imm16 = last_hi16_instruction & 0xFFFF
+                lo16_sign_extended = sign_extend_imm16_value(original_instruction)
+                
+                # this code is very annoying to disassemble if you don't know that
+                # the SRA instruction is being abused to sign-extend 16-bit words
+                # and that the hi16 and lo16 values are loaded using lh, which
+                # sign extends them.
+                absolute_offset = \
+                    (last_hi16_imm16 << 16) + lo16_sign_extended + symbol_target_offset
+                
+                logger.debug("mips lo16: absolute offset 0x%08x (hi16 %08x lo16 %08x sym %08x)",
+                                absolute_offset,
+                                (last_hi16_imm16 << 16),
+                                lo16_sign_extended & 0xFFFFFFFF,
+                                symbol_target_offset
+                                )
+
+                if last_hi16_offset != 0:
+                    absolute_offset_hi16 = \
+                        (absolute_offset - sign_extend_imm16_value(absolute_offset & 0xFFFF)) >> 16
+
+                    patched_hi16_instruction = \
+                        (last_hi16_instruction & 0xFFFF0000) | absolute_offset_hi16
+
+                    logger.debug("mips hi16: change %08x -> %08x (imm16: %04x -> %04x)",
+                                    last_hi16_instruction,
+                                    patched_hi16_instruction,
+                                    last_hi16_imm16,
+                                    absolute_offset_hi16)
+
+                    writable_section[last_hi16_offset:last_hi16_offset+4] = struct.pack(">I", patched_hi16_instruction)
+                    reloc.original_instruction(last_hi16_instruction)
+                    reloc.wired(True)
+
+                    # forget the original hi16 location now that we've applied it
+                    # because all lo16s until we hit another hi16 will reuse the hi16 instruction
+                    # that we have latched right now
+                    last_hi16_offset = 0
+
+                # we keep the lo16 bits pretty much the same because of the 2's complement
+                # nature of what we've just done above.
+                # with an address of 8005C6E0:
+                #
+                # hi16 = 80060000
+                # lo16 = FFFFC6E0
+                #
+                # adding them together produces 8005C6E0.
+                absolute_offset_lo16 = absolute_offset & 0xFFFF
+
+                patched_instruction = (original_instruction & 0xFFFF0000) | absolute_offset_lo16
+
+                logger.debug("mips lo16: change %08x -> %08x (imm16: %04x -> %04x)",
+                                original_instruction,
+                                patched_instruction,
+                                imm16,
+                                absolute_offset_lo16)
+
+            writable_section[reloc_offset:reloc_offset+4] = struct.pack(">I", patched_instruction)
+            reloc.original_instruction(original_instruction)
+            reloc.wired(True)
+
+        # end of relocation apply loop
+        # write the patched section text/data/rodata section back
+        file.section(section_type, writable_section)
+
+        # also write back the updated reloc section now that they're wired
+        updated_reloc_section = bytearray()
+        for reloc in relocs:
+            updated_reloc_section += reloc.serialize()
+        file.section(reloc_section_type, updated_reloc_section)
 
 # ------------------------------------------------------------
 
@@ -475,3 +700,46 @@ def uso_unpack(rom: N64Rom, ipc: int):
         logger.error("can't find boot executable")
         return None
     
+    base_pointer = heap_base
+    base_addresses = {}
+
+    logger.info("rough idea of how bootexe will be loaded:")
+    non_bss_length = 0
+    for section_type in bootexe_file.load_order():
+        base_addresses[section_type] = base_pointer
+
+        section_length = len(bootexe_file.section(section_type))
+
+        base_pointer += section_length
+        logger.info("\tsection %s, 0x%08x-0x%08x", section_type.name, base_addresses[section_type], base_pointer)
+
+    # pass 1: wire all symbols for sections we just loaded
+    _wire_local_symbols(bootexe_file, base_addresses)
+
+    # pass 2: apply relocations
+    _relocate_file(bootexe_file, files)
+
+    # TODO: load other modules and process imports... for now i'm exhausted
+
+    # TODO: in the future, the BFFI file format has to support relocations
+    # so that it can store relocations for 1080 as well as the zelda games.
+    # for now, we can fake a statically-loaded bootexe.
+
+    logger.info("loaded and relocated bootexe OK. it's BFFI time bitch.")
+
+    builder = BffiBuilder()
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    builder.fix(ipc, rom.boot_exe()[:earliest_bss_address-ipc])
+
+    for section_type in bootexe_file.load_order():
+        if section_type == USOFilesystemEntryType.BSS:
+            builder.bss(base_addresses[section_type],
+                len(bootexe_file.section(section_type)))
+        else:
+            builder.fix(base_addresses[section_type],
+                        bootexe_file.section(section_type))
+    
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    return builder.build()
