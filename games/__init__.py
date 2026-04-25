@@ -14,7 +14,7 @@ from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
                     chef_unpack
-from .ubisoft import ray2us_unpack
+from .ubisoft import ray2_unpack
 from .uso import uso_unpack
 
 
@@ -118,9 +118,20 @@ GAME_SPECIFIC_UNPACKERS = {
     "ee8568e107b6d33128a5384d7614acac530cc834417e2c8e3d65e7ed9b82d546": sarge_unpack,
 
     # ------------------------------------------------------
-    # Rayman 2 and other Ubisoft games using the same engine
+    # Rayman 2 and other Ubisoft games using the Openspace engine
     # ------------------------------------------------------
-    "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2us_unpack,
+
+    # Rayman 2 - The Great Escape (U) (M5) [!]
+    "e9a71380b43e25b998f638480b309e300ad9b8a0439ff36e0a8b5fc4ac132e8a": ray2_unpack,
+
+    # Rayman 2 - The Great Escape (E) (M5) [!]
+    "c80b063de6afe80bb47281efe76406654070e942d5a733fee2668c8e11a2581b": ray2_unpack,
+
+    # Disney's Donald Duck - Goin' Quackers (U) [!]
+    "eccdbe42168f6b5efcaadcedda1cc811181d9b3ffdbd8ce8a8e6558a711a4368": ray2_unpack,
+
+    # Donald Duck - Quack Attack (E) (M5) [!]
+    "89ddd46cf3f360359d40aebf7068714ca5f6eb5b436a93150f307c0969954c0c": ray2_unpack,
 
     # ------------------------------------------------------
     # Extreme-G LZSS packer
