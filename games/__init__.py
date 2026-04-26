@@ -3,6 +3,7 @@ Game-specific unpacker drivers.
 '''
 
 from .bam import bam99_unpack
+from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
@@ -307,6 +308,23 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # 1080 Snowboarding (E) (M4) [!]
     "a5d47b9b21bc2c234a0e5c8a1f7eb0e893a914e17a0755318b48c5ad15b7d13c": uso_unpack,
+
+    # ------------------------------------------------------
+    # Bottom Up games
+    # ------------------------------------------------------
+    
+    # 64 Oozumo (J) [!]
+    "661420aa5a7b5c0f86aad0dad813a0c876b99267d9d92fed0f4507e8e2a37240": sumo_unpack,
+
+    # 64 Trump Collection - Alice no Wakuwaku Trump World (J) [!]
+    "afc2eedcd4e7cfe6fd0e56259a45d58ed5647f7ce64fad6d2199312ea564de6f": alice_unpack,
+
+    # 64 Oozumou 2 (J) [!]
+    "3ff701b4735c84b17f8d80a996db59801caa766ee7da4d3e5a3b88eb34d99a17": alice_unpack,
+
+    # Onegai Monsters (J) [b1]
+    # TODO: get newer N64 romset with a good dump for this
+    "057c1596dee9c18a912a39263011cf8b65036c9535b301d9455ab8a08b66c60a": onegai_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

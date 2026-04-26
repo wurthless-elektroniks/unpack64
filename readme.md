@@ -57,7 +57,7 @@ more executable data.
 
 Most games, though, do not do this, because it's inefficient. You'd have the entire game
 code loaded in RDRAM, of which there's only 4 MB (8 with the Expansion Pak), meaning that if
-one specific boss in the game calls a routine that makes it shit itself before it does, that
+one specific boss in the game calls a routine that makes it shit itself before it dies, that
 routine - and the rest of the boss code - remains loaded the entire time and thus wastes space.
 Even worse is that all that code has chewed up space in ROM, and if it's the 1990s, developers
 would frown at this because the cost of a 64 megabit (8 megabyte) mask ROM would be stupid expensive.

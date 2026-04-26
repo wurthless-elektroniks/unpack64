@@ -13,6 +13,8 @@ from tlb import tlb_try_detect_preamble
 
 logger = logging.getLogger(__name__)
 
+AUTO_UNPACK_SIZE_THRESHOLD = 100 * 1024
+
 def _init_argparser():
     argparser = ArgumentParser(formatter_class=RawTextHelpFormatter,
                                prog='unpack64')
@@ -86,8 +88,10 @@ def auto_unpack(rom: N64Rom) -> Bffi:
     # banjo-kazooie is 20k, blast corps is 16k, etc.
     # this attempts to catch that situation, as it's expected the main libultra functions
     # plus the game's common logic will be way more than 32k in size.
-    if len(code) < 32*1024:
-        logger.error("fix segment is below acceptable threshold (total size %d byte(s)), way too small for a typical N64 game. custom packer likely used. stopping.", len(code))
+    if len(code) < AUTO_UNPACK_SIZE_THRESHOLD:
+        logger.error("fix segment is below acceptable threshold (total size %d byte(s), expected at least %d byte(s)). stopping.",
+                     len(code),
+                     AUTO_UNPACK_SIZE_THRESHOLD)
         return None
 
     logger.info("fix segment is %d byte(s)", len(code))
@@ -103,6 +107,7 @@ def unpack_rom(rom: N64Rom) -> Bffi | None:
     if rom_hash in GAME_SPECIFIC_UNPACKERS:
         cic = get_cic(rom)
         bootexe_entry_point = cic.entry_point(rom)
+        logger.info("bootexe entry point: 0x%08x", bootexe_entry_point)
 
         logger.info("game-specific unpacker found, jumping to it...")
         unpack_fcn = GAME_SPECIFIC_UNPACKERS[rom_hash]
