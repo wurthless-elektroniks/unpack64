@@ -9,6 +9,7 @@ from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack
 from .forsaken import forsaken_unpack
+from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -339,6 +340,61 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Major League Baseball Featuring Ken Griffey Jr. (E) [!]
     "5e2c3a938d237b81b0c2c446c264c9f72832ddb667af4dfd9582fd6a206680a4": slugfest_unpack,
+
+    # ------------------------------------------------------
+    # HAL games
+    # ------------------------------------------------------
+
+    # Kirby 64 - The Crystal Shards (U) [!]
+    "2f579751d7ad2824dfd8a6141570306bfaeda1cff40139ba231c30b8591d681c": kirby64_unpack,
+
+    # Hoshi no Kirby 64 (J) (V1.0) [!]
+    "c01a3223483e7dad87db8e4b9a4b0860983585278b7295c92544849dab5258cb": kirby64_unpack,
+
+    # Kirby 64 - The Crystal Shards (E) [!]
+    "391a33a74dedffb870aad78c19d1d8c443f4b6963c582066ee77b14b343ba520": kirby64_unpack,
+
+    # Super Smash Bros. (U) [!]
+    "15592e79d3c5295cef4371d4992f0bd25bec2102fc29644c93e682f7ea99ef3d": smash64_unpack,
+
+    # Nintendo All-Star! Dairantou Smash Brothers (J) [!]
+    "527bdd5a36d6f1b90988523ac8d44276e32b44cf93f609ef6d76f399c9733f25": smash64_unpack,
+
+    # Super Smash Bros. (E) (M3) [!]
+    "ddc65284e78c301f764d2f5e1e01de9a017225867a0b9326b73057fb8bdb1daf": smash64_unpack,
+
+    # Super Smash Bros. (A) [!]
+    "ae6bc07dec084e10bf8ed6364964425d29cd2dacf427c9f06e35fb33290f78bf": smash64_unpack,
+
+    # Shigesato Itoi's No. 1 Bass Fishing! Definitive Edition (J) [b1]
+    "c1b4179d25a583efd494117ec754adad43606572bf328049e4cc209a32fa2041": smash64_unpack,
+
+    # Pokemon Snap (U) [!]
+    "a1d5d816db7f8557ee04c35a011326d058b2c1fbca76b57b352b1d705a1ec1cc": smash64_unpack,
+
+    # Pocket Monsters Snap (J) [!]
+    "f13e6bf81048af5618ddc35f0fbe6c9a4e3345cc53d7360355c5bb87b0b9afa4": smash64_unpack,
+
+    # Pokemon Snap (E) [!]
+    "5fe996f65900f83376ff96cb54fcad2da40010700fe4e36cb006a59737f969f1": smash64_unpack,
+
+    # Pokemon Snap (F) [!]
+    "ddafdca5aeaef7f00aa3a844baf4e950d212c0ccb213664c8ae1a2266b3612ae": smash64_unpack,
+
+    # Pokemon Snap (G) [!]
+    "f4866ef4187c2357cc921624e8f8d35ad5a2832281dfe91a70ec04628d47ef5a": smash64_unpack,
+
+    # Pokemon Snap (I) [!]
+    "5ad74c877ae900acd927e71cc3841d9f4e522f83b453688061266ef2eab154c4": smash64_unpack,
+
+    # Pokemon Snap (S) [!]
+    "3bf1549b5443cdb3e6e7c74617646f6ad881394b70df01e43cbe8025a10efd97": smash64_unpack,
+
+    # Pokemon Snap (A) [!]
+    "9e0974fc8a43b93493f057e0c62bfd955ec2e70f65d578a89c5eae6cf7742b4a": smash64_unpack,
+
+    # Pokemon Snap Station (U) [!]
+    "95bea63075551b8fa171b104f5d4d51fa405bb38d61bd57f6a31c038b6213ca0": smash64_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
