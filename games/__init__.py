@@ -13,6 +13,7 @@ from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
+from .slugfest import slugfest_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
                     chef_unpack
 from .ubisoft import ray2_unpack
@@ -325,6 +326,19 @@ GAME_SPECIFIC_UNPACKERS = {
     # Onegai Monsters (J) [b1]
     # TODO: get newer N64 romset with a good dump for this
     "057c1596dee9c18a912a39263011cf8b65036c9535b301d9455ab8a08b66c60a": onegai_unpack,
+
+    # ------------------------------------------------------
+    # Angel Studios's Griffey games
+    # ------------------------------------------------------
+
+    # Ken Griffey Jr.'s Slugfest (U) [!]
+    "85bea38c90d9f6e023afea3053207b46ed8397a55e682fad2727c744e645b6e5": slugfest_unpack,
+    
+    # Major League Baseball Featuring Ken Griffey Jr. (U) [!]
+    "c489d247f13d0ac6ba71b3bbc6052100a8d582576df8e2a80988ee20b1dcb821": slugfest_unpack,
+
+    # Major League Baseball Featuring Ken Griffey Jr. (E) [!]
+    "5e2c3a938d237b81b0c2c446c264c9f72832ddb667af4dfd9582fd6a206680a4": slugfest_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
