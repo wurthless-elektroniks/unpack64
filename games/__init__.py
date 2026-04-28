@@ -12,6 +12,7 @@ from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
+from .paradigm import aerofighters_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .slugfest import slugfest_unpack
@@ -395,6 +396,30 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Pokemon Snap Station (U) [!]
     "95bea63075551b8fa171b104f5d4d51fa405bb38d61bd57f6a31c038b6213ca0": smash64_unpack,
+
+    # ------------------------------------------------------
+    # Paradigm Entertainment
+    # ------------------------------------------------------
+
+    # Pilotwings 64 (U) [!]
+    "32e3056e854bda2e1d79ce5d050548ffcdef51003aacb0a0fd0328c70eff31b2": aerofighters_unpack,
+
+    # Pilotwings 64 (J) [!]
+    "69bb7ca8e2a320ecd6f1851ef4f0caeece67457fa5475408e2dc0bec0e364b8f": aerofighters_unpack,    
+
+    # Pilotwings 64 (E) (M3) [!]
+    "afe1c8ea27446b6dcf98d8eed92338db0031edf95419bccf4c95be292166fd84": aerofighters_unpack,
+
+    # AeroFighters Assault (U) [!]
+    "5abd27f2be286d6814d64c76a521a80b2b07d03802a71bc03e61e80a16b27931": aerofighters_unpack,
+
+    # AeroFighters Assault (E) (M3) [!]
+    "be4a5d9c32e79334ddbe1611136b6a7c31c1e41a2a1024bbc32eec6632855c4d": aerofighters_unpack,
+
+    # Sonic Wings Assault (J) [!]
+    "febf0934f6d2b792b9668df33fab18fc7d51d64a2ef8b88fe4ffbe43ee12c512": aerofighters_unpack,
+
+    # "6addd60de277c83351eff83099e4dab25ac45279b6401728cfda9eea2f1380df": beetle_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
