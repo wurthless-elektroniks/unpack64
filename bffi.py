@@ -168,9 +168,8 @@ PAGE_SIZE_LUT = {
 
 def _serialize_section_marker(section_id: int,
                               section_type: BffiSectionType,
-                              unused_1: int = 0,
-                              unused_2: int = 0):
-    return struct.pack(">BBBB", section_type.value, unused_1, section_id, unused_2)
+                              unused_1: int = 0):
+    return struct.pack(">BBH", section_type.value, unused_1, section_id)
 
 def _serialize_section_type_with_single_u32(section_type: BffiSectionType, value: int) -> bytes:
     return _serialize_section_marker(0, section_type) + struct.pack(">I", value)
@@ -804,15 +803,21 @@ class BffiBuilder(object):
         return bffi
 
 # --------------------------------------------------------------------------------
+#
+# WARNING! All of this code is unfinished! DO NOT USE IT!
+# The BFFI format is still in flux and will remain so until all edge cases
+# in the N64 library are caught, so these functions will not be finished until then!
+#
+# --------------------------------------------------------------------------------
 
 def _deserialize_section_marker(buffer: bytes, offset: int) -> tuple[BffiSectionType,int,int,int]:
     '''
     Parse section type. Return tuple `(section_type, section_id, unused_1, unused_2)`.
     '''
-    unused_1, section_id, unused_2, section_type_ordinal = \
-        struct.unpack(">BBBB",buffer[offset:offset+4])
+    section_id, unused_2, section_type_ordinal = \
+        struct.unpack(">HBB",buffer[offset:offset+4])
 
-    return BffiSectionType(section_type_ordinal), section_id, unused_1, unused_2
+    return BffiSectionType(section_type_ordinal), section_id, unused_2
 
 def _parse_copy(buffer: bytes, offset: int) -> tuple[int,int,int,int,int]:
     _, source_address, target_address, length = struct.unpack(">IIII", buffer[offset:offset+16])

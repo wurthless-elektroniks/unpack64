@@ -12,7 +12,7 @@ from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
-from .paradigm import aerofighters_unpack
+from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .slugfest import slugfest_unpack
@@ -419,7 +419,45 @@ GAME_SPECIFIC_UNPACKERS = {
     # Sonic Wings Assault (J) [!]
     "febf0934f6d2b792b9668df33fab18fc7d51d64a2ef8b88fe4ffbe43ee12c512": aerofighters_unpack,
 
-    # "6addd60de277c83351eff83099e4dab25ac45279b6401728cfda9eea2f1380df": beetle_unpack,
+    # F-1 World Grand Prix (U) [!]
+    "b5470d259dfebcdf7910257479ff47792bcc83e82f6c70131d4363d7ecb6e7a0": beetle_unpack,
+
+    # F-1 World Grand Prix (J) [!]
+    "756bfcd4f823a5306520ad48d14d43b94392e5a8c922653328165b109f1be147": beetle_unpack,
+
+    # F-1 World Grand Prix (E) [!]
+    "94c0cfff085a9e1768d840d9b48f226d6a6c12692e629bf0bb0b1b5f7d955b27": beetle_unpack,
+
+    # F-1 World Grand Prix (F) [!]
+    "673a8da8fc0dadf665d54f2cfcf319f8f876941dc0f691d956c6e7afebb4e346": beetle_unpack,
+
+    # F-1 World Grand Prix (G) [!]
+    "b64f5b9a3c4afc1907aa71f81edd7df91222a961bd346e0ef57bba6d25900fb4": beetle_unpack,
+
+    # Beetle Adventure Racing! (U) (M3) [!]
+    # FIXME: one module fails to load
+    "6addd60de277c83351eff83099e4dab25ac45279b6401728cfda9eea2f1380df": beetle_unpack,
+
+    # Beetle Adventure Racing! (E) (M3) [!]
+    # FIXME: one module fails to load
+    "ef0c7bfa39712b841cc0d5b87ab6f8faf15a6877e587168a48ddff0c9c3bef87": beetle_unpack,
+
+    # HSV Adventure Racing (A)
+    # FIXME: one module fails to load
+    "c1ab44c36d2442d8f3e2123bd976a2c2768a0940ebe4ac14408db924241e5a6d": beetle_unpack,
+
+    # F-1 World Grand Prix II (E) (M4) [!]
+    # FIXME: one module referenced by the boot segment doesn't load and the unpack fails
+    # "84ad927e250a746b24ab6a9c35264a008d7c27c216da37e5ec1dd46c4c5f699f": beetle_unpack,
+
+    # Duck Dodgers Starring Daffy Duck (U) (M3) [!]
+    "2bbfe0cfc6aff7b623ae53673b8f91e9008cc5749fe07920712e0d0f9abe3fc5": beetle_unpack,
+
+    # Looney Tunes - Duck Dodgers (E) (M6) [!]
+    "296938fb1192d721944e2036b988262af9c556cf432ff9353623495f7e297bb9": beetle_unpack,
+
+    # Indy Racing 2000 (U) [!].z64
+    "1a4672323200183efef8df6e9f4ec6bab230f76731407386a72dbebf6d984d08": beetle_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
