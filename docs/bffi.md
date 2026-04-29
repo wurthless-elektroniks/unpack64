@@ -2,6 +2,9 @@
 
 Code in bffi.py is to be considered "correct" until further notice...
 
+The BFFI file format is nowhere near final at the moment because I'm still trying to unpack all the
+games and find corner cases. Only when I feel comfortable will this fileformat be finalized.
+
 # Binary Format for Fucking Idiots (BFFI)
 
 BFFI (yes, it's pronounced "biffy") is a super basic format that represents a Nintendo 64 boot executable,
