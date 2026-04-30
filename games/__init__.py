@@ -12,6 +12,7 @@ from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
+from .mspacman import mspacman_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -458,6 +459,12 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Indy Racing 2000 (U) [!].z64
     "1a4672323200183efef8df6e9f4ec6bab230f76731407386a72dbebf6d984d08": beetle_unpack,
+
+    # ------------------------------------------------------
+    # Ms. Pacman and its unusual unpacker
+    # ------------------------------------------------------
+
+    "e11a9f47257696d29b62c831c1a577b262437cdbed953f9c08fbaf022397efbe": mspacman_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

@@ -72,6 +72,10 @@ class Preamble():
         '''
         Add new .bss section.
         '''
+        if start_addr == end_addr:
+            logger.warning("bss start/end addresses are the same, not adding.")
+            return
+
         self._bss_sections.append( (start_addr,end_addr) )
 
     def initial_stack_pointer(self):
@@ -894,6 +898,20 @@ def _ident_alt_libultra_many_bss(bootexe: bytearray, ipc: int) -> Preamble | Non
         if bss_start != bss_end:
             bss_sections.append( (bss_start, bss_end) )
         offset += bss_clear_pattern.size()
+
+    set_gp_pattern = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x1C, WILDCARD, WILDCARD,
+        0x27, 0x9C, WILDCARD, WILDCARD,
+    ]) \
+    .modify_andmask(0x04, bytes([0xEC])) \
+    .const_op32_hi16("initial_gp", 0x00) \
+    .const_op32_lo16("initial_gp", 0x04) \
+    .build()
+
+    if set_gp_pattern.compare(bootexe, offset):
+        # TODO: set gp value
+        offset += set_gp_pattern.size()
 
     jump_to_entrypoint_pattern = SignatureBuilder() \
     .pattern([
