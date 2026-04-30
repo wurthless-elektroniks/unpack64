@@ -1,5 +1,7 @@
 '''
 Various Midway games
+
+TODO for all: we only grab the main segment, other overlays still need to be dumped
 '''
 
 import logging
@@ -314,6 +316,65 @@ NFLBLITZ_MAIN_SEGMENT_LOAD_PATTERN = SignatureBuilder() \
     .const_op32_lo16("bss_end_address", 0xC4) \
     .build()
 
+# NFL Blitz 2001 reorders opcodes again; when it clears caches the pointers to
+# the segment load addresses will be stashed in $s0 and $s1.
+# the weird bit is that they're referencing PI addresses directly instead
+# of just an offset in the ROM
+NFLBLITZ_2001_MAIN_SEGMENT_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd0,             # +0x00 addiu  sp,sp,-0x30
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x04 lui    a0,0x8008
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x08 addiu  a0,a0,0x4d30      <-- just setting up stuff for cache clears
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x0C lui    a1,0x800c
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x10 addiu  a1,a1,0x13d0
+        0x00, 0xa4, 0x28, 0x23,             # +0x14 subu   a1,a1,a0
+        0xaf, 0xb1, 0x00, 0x24,             # +0x18 sw     s1,local_c(sp)
+        0x3c, 0x11, 0xb0, WILDCARD,         # +0x1C lui    s1,0xb00b                   <-- ROM main segment end address
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0x20 addiu  s1,s1,0x4660
+        0xaf, 0xb0, 0x00, 0x20,             # +0x24 sw     s0,local_10(sp)
+        0x3c, 0x10, 0xb0, WILDCARD,         # +0x28 lui    s0,0xb005                   <-- ROM main segment start address
+        0xaf, 0xbf, WILDCARD, WILDCARD,     # +0x2C sw     ra,local_8(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x30 jal    FUN_80022af0
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x34 _addiu s0,s0,-0x5880
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x38 lui    a0,0x800c                   <-- more cache clears
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x3C addiu  a0,a0,0x13d0
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x40 lui    a1,0x800f
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x44 addiu  a1,a1,-0x4870
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x48 jal    FUN_80022a40
+        0x00, 0xa4, 0x28, 0x23,             # +0x4C _subu  a1,a1,a0
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x50 lui    a0,0x8005
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x54 addiu  a0,a0,-0x3e30              <-- PI handle thing
+        0x00, 0x00, 0x28, 0x21,             # +0x58 clear  a1
+        0x00, 0x00, 0x30, 0x21,             # +0x5C clear  a2
+        0x02, 0x00, 0x38, 0x21,             # +0x60 move   a3,s0                      <-- ROM address pulled back into args registers
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x64 lui    v0,0x8008                  <-- actual RAM load address
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x68 addiu  v0,v0,0x18b0
+        0x02, 0x30, 0x88, 0x23,             # +0x6C subu   s1,s1,s0                   <-- finally we calced our segment loadsize
+        0x3c, 0x10, 0x80, WILDCARD,         # +0x70 lui    s0,0x8005
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x74 addiu  s0,s0,0x77b0
+        0xaf, 0xa2, 0x00, 0x10,             # +0x78 sw     v0,local_20(sp)
+        0xaf, 0xb1, 0x00, 0x14,             # +0x7C sw     s1,local_1c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x80 jal    osPiStartDma
+        0xaf, 0xb0, 0x00, 0x18,             # +0x84 _sw    s0,local_18(sp)
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x88 lui    a0,0x800f                 <-- BSS start address
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x8C addiu  a0,a0,-0x4870
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x90 lui    a1,0x8012                 <-- BSS end address
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x94 addiu  a1,a1,0x78a0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x98 jal    bzero
+        0x00, 0xa4, 0x28, 0x23,             # +0x9C _subu  a1,a1,a0
+    ]) \
+    .const_op32_hi16("rom_end_address",   0x1C) \
+    .const_op32_lo16("rom_end_address",   0x20) \
+    .const_op32_hi16("rom_start_address", 0x28) \
+    .const_op32_lo16("rom_start_address", 0x34) \
+    .const_op32_hi16("ram_load_address",  0x64) \
+    .const_op32_lo16("ram_load_address",  0x68) \
+    .const_op32_hi16("bss_start_address", 0x88) \
+    .const_op32_lo16("bss_start_address", 0x8C) \
+    .const_op32_hi16("bss_end_address",   0x90) \
+    .const_op32_lo16("bss_end_address",   0x94) \
+    .build()
+
 def calispeed_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -323,17 +384,22 @@ def calispeed_unpack(rom: N64Rom, ipc: int) -> Bffi:
     earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
     bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
 
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
     pattern, main_segment_load_offset = pick_pattern(bootexe,
                                                [CALISPEED_MAIN_SEGMENT_LOAD_PATTERN,
-                                                NFLBLITZ_MAIN_SEGMENT_LOAD_PATTERN])
+                                                NFLBLITZ_MAIN_SEGMENT_LOAD_PATTERN,
+                                                NFLBLITZ_2001_MAIN_SEGMENT_LOAD_PATTERN])
     if main_segment_load_offset is None:
         return None
 
     logger.info("found Midway osPiStartDma() stub")
 
     consts = pattern.consts(ipc, bootexe, main_segment_load_offset)
-    rom_start_address      = consts["rom_start_address"].get_value()
-    rom_end_address        = consts["rom_end_address"].get_value()
+    rom_start_address      = consts["rom_start_address"].get_value() & 0x03FFFFFF
+    rom_end_address        = consts["rom_end_address"].get_value() & 0x03FFFFFF
     ram_load_address       = consts["ram_load_address"].get_value()
     bss_start_address      = consts["bss_start_address"].get_value()
     bss_end_address        = consts["bss_end_address"].get_value()
@@ -345,9 +411,5 @@ def calispeed_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("BSS is at 0x%08x-0x%08x", bss_start_address,bss_end_address)
     builder.bss(bss_start_address, bss_end_address-bss_start_address)
     builder.fix(ram_load_address, rom.read_bytes(rom_start_address, rom_end_address-rom_start_address))
-
-    builder.fix(ipc, bootexe)
-    builder.initial_stack_pointer(preamble.initial_stack_pointer())
-    builder.initial_program_counter(preamble.crt_entry_point())
 
     return builder.build()

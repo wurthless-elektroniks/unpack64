@@ -498,9 +498,11 @@ GAME_SPECIFIC_UNPACKERS = {
     # NFL Blitz 2000 (U) [!]
     "81fd09077c4be225eea90539b0fddc56339b5d1afd7e313b5d08e0c795aeefeb": calispeed_unpack,
 
-    # nfl blitz specialedition and nfl blitz 2001 still todo
+    # NFL Blitz 2001 (U) [!]
+    "c2e8d6f62dc75dcb6f7fda50311b010385ec85d61c88280f1e6e973d0bb5228d": calispeed_unpack,
 
-
+    # NFL Blitz - Special Edition (U) [!]
+    "8e861e75e7f16a9baefe2d82525240b68dfb79e01933571537dc5967dd482cc0": calispeed_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
