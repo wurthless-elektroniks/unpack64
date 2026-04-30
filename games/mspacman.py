@@ -52,7 +52,6 @@ def mspacman_unpack(rom: N64Rom, ipc: int):
     
     unpacker_offset = MSPACMAN_UNPACK_PATTERN.find(rom.boot_exe()[:0x400], preamble.crt_entry_point() - ipc)
     if unpacker_offset is None:
-        print("piss")
         return None
 
     logger.info("found Ms Pacman unpacker")

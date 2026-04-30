@@ -146,6 +146,10 @@ def sumo_unpack(rom: N64Rom, ipc: int) -> Bffi:
         segment = rom.read_bytes(rom_start_address, rom_end_address-rom_start_address)
         builder.seg(ram_destination_address, segment)
     
+    if not ripped:
+        logger.error("no calls found!")
+        return None
+
     builder.fix(ipc, bootexe)
     builder.initial_program_counter(preamble.crt_entry_point())
     builder.initial_stack_pointer(preamble.initial_stack_pointer())

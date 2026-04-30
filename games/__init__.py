@@ -12,6 +12,7 @@ from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
+from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack
 from .mspacman import mspacman_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -465,6 +466,41 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
 
     "e11a9f47257696d29b62c831c1a577b262437cdbed953f9c08fbaf022397efbe": mspacman_unpack,
+
+    # ------------------------------------------------------
+    # Various Midway games
+    # ------------------------------------------------------
+
+    # San Francisco Rush - Extreme Racing (U) (M3) [!]
+    "493960054c6749048d9a1f9f01df5f99a8a5983f19e033606ae4b85beffb3841": sfrush_unpack,
+
+    # San Francisco Rush - Extreme Racing (E) (M3) [!]
+    "344a58277fd5f833b7c5dbae8c6f947fba391c2fd74e56c9604640fd68dc553b": sfrush_unpack,
+
+    # Rush 2 - Extreme Racing USA (U) [!]
+    "a59e65822d46775ca91d98b1220bcdea9acb54e48e56a7b5c026a3a877c08eb5": rush2_unpack,
+
+    # Rush 2 - Extreme Racing USA (E) (M6) [!]
+    "fbc02c5a58f42f88de3ae595ddce3ebbfd6d866f1c39ea346addcedca997cd2a": rush2_unpack,
+
+    # San Francisco Rush 2049 (U) [!]
+    "83c4964d513718e99cd3569bc33108308cee983eb24bf057c25b366a9160f92c": rush2_unpack,
+
+    # San Francisco Rush 2049 (E) (M6) [!]
+    "40bd50dfe6bc41f38323000927b37f2c0a02d8d0090b1db4882576c39eabf2e4": rush2_unpack,
+
+    # California Speed (U) [!]
+    "32d083c6570a92614f7ed8221b136ca45eb3d06ca98d8a8342e0a366563ba791": calispeed_unpack,
+
+    # NFL Blitz (U) [!]
+    "1c37ed9d1d88122dd174b6258fa72b23b404b4c64a259592504392fa7e21e41e": calispeed_unpack,
+
+    # NFL Blitz 2000 (U) [!]
+    "81fd09077c4be225eea90539b0fddc56339b5d1afd7e313b5d08e0c795aeefeb": calispeed_unpack,
+
+    # nfl blitz specialedition and nfl blitz 2001 still todo
+
+
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

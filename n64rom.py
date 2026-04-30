@@ -142,6 +142,9 @@ class N64Rom:
         # TODO: bounds check?
         return self._bytes[offset:offset+count]
 
+    def read_bytes_until_end(self, offset) -> bytes:
+        return self._bytes[offset:]
+
     def write_bytes(self, offset, count):
         pass
 

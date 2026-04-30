@@ -32,6 +32,11 @@ def _init_argparser():
                            action='store_true',
                            help="Only try identifying preamble type; do not try unpacking")
   
+    argparser.add_argument("--try-all-unpackers",
+                           default=False,
+                           action='store_true',
+                           help="Run this game against all supported unpackers")
+
     return argparser
 
 def auto_unpack(rom: N64Rom) -> Bffi:
@@ -99,10 +104,15 @@ def auto_unpack(rom: N64Rom) -> Bffi:
 
     return bffibuilder.build()
 
-def unpack_rom(rom: N64Rom) -> Bffi | None:
+def unpack_rom(rom: N64Rom,
+               try_all_unpackers: bool = False) -> Bffi | None:
     # first, hash the ROM and try to find a game-specific unpacker for it,
     # as that's how we'll know how to find all the various code overlays
     rom_hash = rom.sha256()
+    cic = get_cic(rom)
+    bootexe_entry_point = cic.entry_point(rom)
+    
+    logger.info("rom sha256 is: %s", rom_hash)
 
     if rom_hash in GAME_SPECIFIC_UNPACKERS:
         cic = get_cic(rom)
@@ -113,8 +123,20 @@ def unpack_rom(rom: N64Rom) -> Bffi | None:
         unpack_fcn = GAME_SPECIFIC_UNPACKERS[rom_hash]
 
         return unpack_fcn(rom, bootexe_entry_point)
+    
+    if try_all_unpackers:
+        unpackers = set(GAME_SPECIFIC_UNPACKERS.values())
 
-    logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results).\nrom sha256 hash was: %s", rom_hash)
+        for unpacker in unpackers:
+            logger.info("try unpack function: %s", unpacker.__name__)
+            unpacked = unpacker(rom, bootexe_entry_point)
+            if unpacked is not None:
+                return unpacked
+            logger.info("try unpack function: %s... FAILED", unpacker.__name__)
+
+        logger.warning("could not find an unpacker for this ROM...")
+
+    logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results).")
     return auto_unpack(rom)
 
 def main():
@@ -156,7 +178,7 @@ def main():
 
         return
 
-    bffi = unpack_rom(rom)
+    bffi = unpack_rom(rom, try_all_unpackers=args.try_all_unpackers)
 
     if bffi is None:
         logger.error("unpack failed!")
