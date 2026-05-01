@@ -1,6 +1,14 @@
 '''
 Various Midway games
 
+All of these games use the same basic code pattern:
+
+- Entry point creates and starts idle thread (usual N64 stuff)
+- Idle thread usually, but not always, creates a thread in a segment that has yet to
+  be loaded, but doesn't start it
+- Idle thread creates the main thread, which loads the main segment and then calls a
+  function within it
+
 TODO for all: we only grab the main segment, other overlays still need to be dumped
 '''
 
@@ -411,5 +419,150 @@ def calispeed_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("BSS is at 0x%08x-0x%08x", bss_start_address,bss_end_address)
     builder.bss(bss_start_address, bss_end_address-bss_start_address)
     builder.fix(ram_load_address, rom.read_bytes(rom_start_address, rom_end_address-rom_start_address))
+
+    return builder.build()
+
+# ----------------------------------------------------------------
+#
+# Cruis'n USA
+#
+# Multiple overlays swapped out from a table that is conveniently loaded
+# into RAM at boot time.
+#
+# ----------------------------------------------------------------
+
+CRUISNUSA_SEGMENT_SWAPPER_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd0,         # +0x00 addiu sp,sp,-0x30
+        0xaf, 0xbf, 0x00, 0x14,         # +0x04 sw    ra,local_1c(sp)
+        0xaf, 0xa4, 0x00, 0x30,         # +0x08 sw    a0,local_res0(sp)
+        0x8f, 0xae, 0x00, 0x30,         # +0x0C lw    t6,local_res0(sp)
+        0x3c, 0x18, 0x80, WILDCARD,     # +0x10 lui   t8,0x8013
+        0x27, 0x18, WILDCARD, WILDCARD, # +0x14 addiu t8,t8,0x22f0         <-- table base
+        0x00, 0x0e, 0x78, 0x80,         # +0x18 sll   t7,t6,0x2
+        0x01, 0xee, 0x78, 0x23,         # +0x1C subu  t7,t7,t6
+        0x00, 0x0f, 0x78, 0xc0,         # +0x20 sll   t7,t7,0x3
+        0x01, 0xf8, 0x10, 0x21,         # +0x24 addu  v0,t7,t8
+        0x8c, 0x43, 0x00, 0x10,         # +0x28 lw    v1,0x10(v0)
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x10) \
+    .const_op32_lo16("overlay_table_address", 0x14) \
+    .build()
+
+def cruisnusa_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    cruisn_segment_swapper_offset = CRUISNUSA_SEGMENT_SWAPPER_PATTERN.find(bootexe)
+    if cruisn_segment_swapper_offset is None:
+        return None
+    
+    logger.info("found Cruis'n USA segment swapper")
+    
+    consts = CRUISNUSA_SEGMENT_SWAPPER_PATTERN.consts(ipc, bootexe, cruisn_segment_swapper_offset)
+    overlay_table_address = consts["overlay_table_address"].get_value()
+    logger.info("overlay table in RAM at 0x%08x", overlay_table_address)
+
+    offset = overlay_table_address - ipc
+    while True:
+        rom_start_address, \
+        rom_end_address,   \
+        ram_start_address, \
+        ram_end_address,   \
+        bss_start_address, \
+        bss_end_address = struct.unpack(">IIIIII", bootexe[offset:offset+0x18])
+
+        if rom_start_address == 0x0E:
+            break
+
+        offset += 0x18
+
+        segment = rom.read_bytes(rom_start_address, rom_end_address-rom_start_address)
+
+        # TODO: seg-specific BSS. BSS in BFFI is only designed for boot time bss clearing
+        # at the moment...
+
+        logger.info("segment: rom 0x%08x-0x%08x -> 0x%08x", rom_start_address, rom_end_address, ram_start_address)
+
+        builder.seg(ram_start_address, segment)
+
+    return builder.build()
+
+
+# ----------------------------------------------------------------
+#
+# Cruis'n Exotica
+#
+# High-level cart read routine clears caches and runs osPiStartDma().
+#
+# ----------------------------------------------------------------
+
+CRUISNEXOTICA_MAIN_SEGMENT_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x00 lui   a0,0x6
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x04 addiu a0,a0,-0x3b10
+        0x3c, 0x12, 0x80, WILDCARD,         # +0x08 lui   s2,0x8033
+        0x26, 0x52, WILDCARD, WILDCARD,     # +0x0C addiu s2,s2,-0x4000
+        0x02, 0x40, 0x28, 0x21,             # +0x10 move  a1,s2
+        0x3c, 0x10, WILDCARD, WILDCARD,     # +0x14 lui   s0,0x7
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x18 addiu s0,s0,0x56e0
+        0x02, 0x04, 0x80, 0x23,             # +0x1C subu  s0,s0,a0
+        0x26, 0x06, 0x00, 0x0f,             # +0x20 addiu a2,s0,0xf
+        0x24, 0x11, 0xff, 0xf0,             # +0x24 li    s1,-0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal   readcart
+        0x00, 0xd1, 0x30, 0x24,             # +0x2C _and  a2,a2,s1
+    ]) \
+    .const_op32_hi16("main_segment_rom_start_address", 0x00) \
+    .const_op32_lo16("main_segment_rom_start_address", 0x04) \
+    .const_op32_hi16("main_segment_load_address", 0x08) \
+    .const_op32_lo16("main_segment_load_address", 0x0C) \
+    .const_op32_hi16("main_segment_rom_end_address", 0x14) \
+    .const_op32_lo16("main_segment_rom_end_address", 0x18) \
+    .build()
+
+def cruisnexotica_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    cruisn_main_segment_load_offset = CRUISNEXOTICA_MAIN_SEGMENT_LOAD_PATTERN.find(bootexe)
+    if cruisn_main_segment_load_offset is None:
+        return None
+    
+    logger.info("found Cruis'n Exotica main segment loader")
+
+    consts = CRUISNEXOTICA_MAIN_SEGMENT_LOAD_PATTERN.consts(ipc, bootexe, cruisn_main_segment_load_offset)
+    main_segment_rom_start_address      = consts["main_segment_rom_start_address"].get_value() & 0x03FFFFFF
+    main_segment_rom_end_address        = consts["main_segment_rom_end_address"].get_value() & 0x03FFFFFF
+    main_segment_load_address           = consts["main_segment_load_address"].get_value()
+
+    logger.info("main segment: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                main_segment_rom_start_address,
+                main_segment_rom_end_address,
+                main_segment_load_address)
+    
+    mainseg = rom.read_bytes(main_segment_rom_start_address,
+                             main_segment_rom_end_address-main_segment_rom_start_address)
+    
+    # there's a chance this segment gets unloaded (it's loaded multiple times)
+    # so i'm declaring it as a seg for now
+    builder.seg(main_segment_load_address, mainseg)
 
     return builder.build()

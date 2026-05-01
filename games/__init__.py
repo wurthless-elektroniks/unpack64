@@ -12,7 +12,8 @@ from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
 from .mariotennis import mariotennis_unpack
-from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack
+from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
+                    cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
@@ -503,6 +504,23 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NFL Blitz - Special Edition (U) [!]
     "8e861e75e7f16a9baefe2d82525240b68dfb79e01933571537dc5967dd482cc0": calispeed_unpack,
+
+    # Cruis'n USA (U) (V1.0) [!]
+    "2eee547273101e02bb96d0ef3db5e400f0506fba77397719d33b1072617c0558": cruisnusa_unpack,
+
+    # Cruis'n USA (U) (V1.1) [!]
+    "9c7cf76974a0219575ff0fc007f9fb2ccd9c1971b7571e3c6269a946f095df5b": cruisnusa_unpack,
+
+    # Cruis'n USA (U) (V1.2) [!]
+    "86db95f334c54fd900db7dce9a2f5880e933cc3650e4e4ebfc2def0f4bcd59c6": cruisnusa_unpack,
+
+    # Cruis'n USA (E) [!]
+    "25fd3ca587edc8316080f28814b7a22fddce2338ef22ac23ed61dbc87b4d8473": cruisnusa_unpack,
+
+    # Cruis'n Exotica (U) [!]
+    "d26ecb1b3a3dc965acc1063cc243ab573bf5ffca310e96aff2f6d2265a49f0b1": cruisnexotica_unpack,
+
+    # Cruis'n World appears to be a single-load game...
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
