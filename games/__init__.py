@@ -21,6 +21,7 @@ from .sarge  import sarge_unpack
 from .slugfest import slugfest_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
                     chef_unpack
+from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
 
@@ -521,6 +522,16 @@ GAME_SPECIFIC_UNPACKERS = {
     "d26ecb1b3a3dc965acc1063cc243ab573bf5ffca310e96aff2f6d2265a49f0b1": cruisnexotica_unpack,
 
     # Cruis'n World appears to be a single-load game...
+
+    # ------------------------------------------------------
+    # Worms Armageddon
+    # ------------------------------------------------------
+
+    # Worms - Armageddon (U) (M3) [!]
+    "42f408c8d3448233c7f452188270057875164cf763c9194a1bb8e8c8014a9468": worms_unpack,
+
+    # Worms - Armageddon (E) (M6) [!]
+    "d79ebabeef2d0a913c910497e73bf7d188c012fd578ec66a855d7bdbaa6d5bdc": worms_eu_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
