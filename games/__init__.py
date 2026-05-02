@@ -7,7 +7,7 @@ from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
-from .factor5 import rogue_us_unpack, rogue_jp_unpack
+from .factor5 import rogue_us_unpack, rogue_jp_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
@@ -230,6 +230,14 @@ GAME_SPECIFIC_UNPACKERS = {
     # Star Wars - Rogue Squadron (E) (M3) (V1.1) [!]
     "592b37eed2730ae25232b163dea6632cf6b9ed21dd3be35c0500a939b897627b": rogue_jp_unpack,
 
+    # Indiana Jones and the Infernal Machine (U) [!]
+    "6e127e592f098a28c92d2032d71c56af1412e5dd189fe792d9238b12a0928c59": indy_unpack,
+
+    # Star Wars Episode I - Battle for Naboo (U) [!]
+    "515b2302fefe1741c09103f70708690a058ba77a7ab8acd086c48b972b22d33e": indy_unpack,
+
+    # Star Wars Episode I - Battle for Naboo (E) [!]
+    "b5bdfe343a2b24cad636b66cac0af54ac04aefbfa26a817957227cc24ced4846": indy_unpack,    
 
     # ------------------------------------------------------
     #

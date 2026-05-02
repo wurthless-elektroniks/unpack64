@@ -411,11 +411,13 @@ class BffiTlb(object):
             page_size           = (mask >> 1) | 0x0FFF
             mask                = mask | 0x1FFF
             virtual_page_number = tlb_entry.entryhi() & ~mask
+            address_masked      = address & ~mask
 
             logger.debug("page size %08x, mask %08x, vpn %08x", page_size, mask, virtual_page_number)
-            if (address & virtual_page_number) != virtual_page_number:
+            if address_masked != virtual_page_number:
                 logger.debug("...miss")
                 continue
+
 
             even_odd_pagemask = PAGE_SIZE_LUT[tlb_entry.pagemask()]
             
