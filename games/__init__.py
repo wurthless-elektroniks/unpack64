@@ -16,6 +16,7 @@ from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
+from .nintendo import sm64_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -596,6 +597,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Susume! Taisen Puzzle Dama Toukon! Marumata Chou (J) [!]
     "bf07279640b1c64287f02413794c8200769a74570d3cb0e5e5d22df4c1dda66e": castlevania_unpack,
+
+    # ------------------------------------------------------
+    # Super low priority Nintendo games
+    # ------------------------------------------------------
+
+    # Super Mario 64 (U) [!]
+    "17ce077343c6133f8c9f2d6d6d9a4ab62c8cd2aa57c40aea1f490b4c8bb21d91": sm64_unpack,
+
+    # Super Mario 64 (J) [!]
+    "9cf7a80db321b07a8d461fe536c02c87b7412433953891cdec9191bfad2db317": sm64_unpack,
+
+    # Super Mario 64 (E) (M3) [!]
+    "c792e5ebcba34c8d98c0c44cf29747c8ee67e7b907fcc77887f9ff2523f80572": sm64_unpack,
+
+    # Super Mario 64 - Shindou Edition (J) [!]
+    "f8807b5e28f1b1a31c5d3675d23ece73f949ccb553dcbb07972666a1e76adfa2": sm64_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

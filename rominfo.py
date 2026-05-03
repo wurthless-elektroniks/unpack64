@@ -20,9 +20,15 @@ def _init_argparser():
                            nargs='?',
                            help="Input N64 ROM (.z64, .v64, .zip) or a directory containing them")
   
+    argparser.add_argument("--todo-items-only",
+                           action='store_true',
+                           default=False,
+                           help="Print only info for games that don't have a game-specific unpacker registered")
+
     return argparser
 
-def dump_rominfo(inputrom: str):
+def dump_rominfo(inputrom: str,
+                 todo_items_only: bool = False):
     rom = None
     if inputrom.endswith(".z64") or inputrom.endswith(".v64") or inputrom.endswith(".n64"):
         rom = load_rom(inputrom)
@@ -31,7 +37,7 @@ def dump_rominfo(inputrom: str):
     else:
         logger.error("file doesn't have a valid extension, must be one of: .z64, .v64, .n64, .zip")
         return
-
+    
     if rom is None:
         logger.error("unable to load ROM: %s",inputrom)
         return
@@ -39,6 +45,9 @@ def dump_rominfo(inputrom: str):
     romhead = rom.header()
     cic = get_cic(rom)
     ipc = cic.entry_point(rom)
+
+    if todo_items_only and rom.sha256() in GAME_SPECIFIC_UNPACKERS:
+        return None
 
     print( \
 f"""
@@ -108,7 +117,8 @@ def rominfo_main():
         
         files.sort()
         for file in files:
-            dump_rominfo(file)
+            dump_rominfo(file,
+                         todo_items_only=args.todo_items_only)
     else:
         dump_rominfo(inputrom)
     
