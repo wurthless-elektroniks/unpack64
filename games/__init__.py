@@ -9,8 +9,9 @@ from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack, indy_unpack
 from .forsaken import forsaken_unpack
-from .hal import kirby64_unpack, smash64_unpack
 from .gauntlet import gauntlet_unpack
+from .hal import kirby64_unpack, smash64_unpack
+from .konami import deadlyarts_unpack, castlevania_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
@@ -540,6 +541,43 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Worms - Armageddon (E) (M6) [!]
     "d79ebabeef2d0a913c910497e73bf7d188c012fd578ec66a855d7bdbaa6d5bdc": worms_eu_unpack,
+
+    # ------------------------------------------------------
+    # Konami
+    # ------------------------------------------------------
+
+    # Deadly Arts (U) [!]
+    "80ba81827277bc1f171a00c4669406a3ef51d419f3aa0d510b9b567b43531a2c": deadlyarts_unpack,
+
+    # G.A.S.P!! Fighter's NEXTream (J) [!]
+    "77f06356547f3da2d2631d7d4ee9a9c193bb2f2052cac5a9f93a2f0dc3ece84f": deadlyarts_unpack,
+
+    # G.A.S.P!! Fighter's NEXTream (E) [!]
+    "dcb4b7c2c53b1505e12db2136af1dea4877ba1be446d4524c2bca18dbe65acd3": deadlyarts_unpack,
+
+    # Castlevania (U) (V1.0) [!]
+    "0237b439a3adcc2e6c1b24b4ff1b24d2f0d8f04a2d0cc29b8b67cb075f1903c5": castlevania_unpack,
+
+    # Castlevania (U) (V1.2) [!]
+    "0f53f12e85bcf5799c8c8e9e71957e20c434f8f5823ab95bd1f54c33c16e7b1c": castlevania_unpack,
+
+    # Akumajou Dracula Mokushiroku - Real Action Adventure (J) [!]
+    "f5b8a1bd8dd4d03b5fe291428b284ca30d9afd300fe25f60317aa1e4590db638": castlevania_unpack,
+
+    # Castlevania (E) (M3) [!]
+    "902f060c7787ffdf83f547203eb1182c737714a2bec5f42c409f05b26ecdb9dc": castlevania_unpack,
+
+    # Castlevania - Legacy of Darkness (U) [!]
+    "89e15df6042defddc48c61f7408f99d06fffdb845e2422cf8b5ba8e73d4d70fb": castlevania_unpack,
+
+    # Akumajou Dracula Mokushiroku Gaiden - Legend of Cornell (J) [!]
+    "51a0443883f3f94b20b6fb9a8688631c51bc7feafb143c51e48dc7198adfd1ca": castlevania_unpack,
+
+    # Castlevania - Legacy of Darkness (E) (M3) [!]
+    "e78c172c1d554d1c94865969cec9b87a2149c92ec69ebc52b73a46648b5b2395": castlevania_unpack,
+
+    # Dance Dance Revolution - Disney Dancing Museum (J) [o1]
+    "6faae1c2878a411a5cb1a3fcfef5456a3aa010b448a25b476d759365247ecd77": castlevania_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
