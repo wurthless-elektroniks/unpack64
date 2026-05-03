@@ -579,6 +579,24 @@ GAME_SPECIFIC_UNPACKERS = {
     # Dance Dance Revolution - Disney Dancing Museum (J) [o1]
     "6faae1c2878a411a5cb1a3fcfef5456a3aa010b448a25b476d759365247ecd77": castlevania_unpack,
 
+    # NBA In the Zone '98 (U) [!]
+    "0422b2364cf1f7822dbdf4a64e297ea36155a99a6497368d4e844e51692957a2": castlevania_unpack,
+
+    # NBA In the Zone '98 (J) [!]
+    "8ac071ecf2786a3e3b14b7b10f2ef060c7c1bfb17a7a5621c4f3bc6e5bca35fe": castlevania_unpack,
+
+    # NBA In the Zone '99 (U) [!]
+    "4189751eb5fc07932c7a440c7b448f8929ef8eba104aa1425f430737f284d609": castlevania_unpack,
+
+    # NBA In the Zone 2 (J) [!]
+    "74f80f1aa04eb5103bdf014d327b3aa707da45ba77e9f005d970764209d3c09e": castlevania_unpack,
+
+    # NHL Blades of Steel '99 (U) [!]
+    "779fa692d07c6a322e189ec80183cb5fa700bbae1c8d5476a78d4ace3cfa4434": castlevania_unpack, 
+
+    # Susume! Taisen Puzzle Dama Toukon! Marumata Chou (J) [!]
+    "bf07279640b1c64287f02413794c8200769a74570d3cb0e5e5d22df4c1dda66e": castlevania_unpack,
+
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
     # ------------------------------------------------------

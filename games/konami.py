@@ -22,9 +22,24 @@ from bffi import Bffi, BffiBuilder
 from n64rom import N64Rom
 from preamble import preamble_extract_bss_sections_to_bffi, identify_preamble
 from signature import SignatureBuilder, WILDCARD, Signature
-from sigutil import find_all_instances
+from sigutil import find_all_instances, pick_pattern
 
 logger = logging.getLogger(__name__)
+
+
+# -------------------------------------------------
+#
+# "Nisitenma-Ichigo" generic handlings
+#
+# -------------------------------------------------
+
+NISITENMA_MAGIC_PATTERN = SignatureBuilder() \
+    .bits( b'Nisitenma-Ichigo' ) \
+    .andmask( [0xFF] * 16 ) \
+    .build()
+
+def _nisitenma_find_table_offset(segment: bytes) -> int | None:
+    return NISITENMA_MAGIC_PATTERN.find(segment)
 
 # -------------------------------------------------
 #
@@ -219,36 +234,57 @@ def deadlyarts_unpack(rom: N64Rom, ipc: int) -> Bffi:
 #
 # Castlevania
 #
-# Pretty unnotable osPiStartDma() abstraction... or so I thought.
+# Pretty unnotable osPiStartDma() abstraction.
+# This game does use the Nisitenma-Ichigo table, but there's no sign of it
+# decompressing code from it (yet).
 #
 # -------------------------------------------------
 
 # Castlevania only uses this to load uncompressed overlays
-#
-# Other games (Goemon's Great Adventure and Hybrid Heaven) use this function,
-# but it's abstracted away by a function that can decompress overlays/data to RAM.
-# Castlevania uses the same compression algorithm.
-#
-# If "Nisitenma-Ichigo" is in the bootexe, you've found the resource table.
 CASTLEVANIA_LOAD_OVERLAY_FCN = SignatureBuilder() \
     .pattern([
-        0x27, 0xbd, 0xff, 0xe0,             # addiu      sp,sp,-0x20
-        0xaf, 0xa6, 0x00, 0x28,             # sw         a2,local_res8(sp)
-        0x8f, 0xae, 0x00, 0x28,             # lw         t6,local_res8(sp)
-        0x00, 0x80, 0x38, 0x25,             # or         a3,a0,zero
-        0x00, 0xa0, 0x30, 0x25,             # or         a2,a1,zero
-        0xaf, 0xbf, 0x00, 0x1c,             # sw         ra,local_4(sp)
-        0xaf, 0xa5, 0x00, 0x24,             # sw         a1,local_res4(sp)
-        0x3c, 0x04, 0x80, WILDCARD,         # lui        a0,0x800d
-        0x8c, 0x84, WILDCARD, WILDCARD,     # lw         a0,offset DAT_800d5e78(a0)
-        0x00, 0x00, 0x28, 0x25,             # or         a1,zero,zero
-        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        readcart
-        0xaf, 0xae, 0x00, 0x10,             # _sw        t6,local_10(sp)
-        0x8f, 0xbf, 0x00, 0x1c,             # lw         ra,local_4(sp)
-        0x27, 0xbd, 0x00, 0x20,             # addiu      sp,sp,0x20
-        0x03, 0xe0, 0x00, 0x08,             # jr         ra
-        0x00, 0x00, 0x00, 0x00,             # _nop
+        0x27, 0xbd, 0xff, 0xe0,             # +0x00 addiu      sp,sp,-0x20
+        0xaf, 0xa6, 0x00, 0x28,             # +0x04 sw         a2,local_res8(sp)
+        0x8c, 0x00, 0x00, 0x28,             # +0x08 lw         tX,local_res8(sp)
+        0x00, 0x80, 0x38, 0x25,             # +0x0C or         a3,a0,zero
+        0x00, 0xa0, 0x30, 0x25,             # +0x10 or         a2,a1,zero
+        0xaf, 0xbf, 0x00, 0x1c,             # +0x14 sw         ra,local_4(sp)
+        0xaf, 0xa5, 0x00, 0x24,             # +0x18 sw         a1,local_res4(sp)
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x1C lui        a0,0x800d
+        0x8c, 0x84, WILDCARD, WILDCARD,     # +0x20 lw         a0,offset DAT_800d5e78(a0)
+        0x00, 0x00, 0x28, 0x25,             # +0x24 or         a1,zero,zero
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal        readcart
+        0xac, 0x00, 0x00, 0x10,             # +0x2C _sw        tX,local_10(sp)
+        0x8f, 0xbf, 0x00, 0x1c,             # +0x30 lw         ra,local_4(sp)
+        0x27, 0xbd, 0x00, 0x20,             # +0x34 addiu      sp,sp,0x20
+        0x03, 0xe0, 0x00, 0x08,             # +0x38 jr         ra
+        0x00, 0x00, 0x00, 0x00,             # +0x3C _nop
     ]) \
+    .modify_andmask(0x08, bytearray([0b11111100, 0b00000000])) \
+    .modify_andmask(0x2C, bytearray([0b11111100, 0b00000000])) \
+    .build()
+
+# NBA In The Zone's function inlines osPiStartDma()/osRecvMesg(),
+# but has the same method signature.
+NBAITZ_LOAD_OVERLAY_FCN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xb8,             # +0x00 addiu      sp,sp,-0x48
+        0xaf, 0xa4, 0x00, 0x48,             # +0x04 sw         a0,local_res0(sp)
+        0xaf, 0xbf, 0x00, 0x24,             # +0x08 sw         ra,local_24(sp)
+        0xaf, 0xa5, 0x00, 0x4c,             # +0x0C sw         a1,local_res4(sp)
+        0x00, 0xa0, 0x20, 0x25,             # +0x10 or         a0,a1,zero
+        0xaf, 0xa6, 0x00, 0x50,             # +0x14 sw         a2,local_res8(sp)
+        0xaf, 0xa0, 0x00, 0x2c,             # +0x18 sw         zero,local_1c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal        FUN_800cae70
+        0x00, 0xc0, 0x28, 0x25,             # +0x20 _or        a1,a2,zero
+        0x8f, 0xa4, 0x00, 0x4c,             # +0x24 lw         a0,local_res4(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal        FUN_800caf20
+        0x8f, 0xa5, 0x00, 0x50,             # +0x2C _lw        a1,local_res8(sp)
+        0x8c, 0x00, 0x00, 0x4c,             # +0x30 lw         tX,local_res4(sp)
+        # rest of function has numerous differences which
+        # cause this pattern not to match on several games
+    ]) \
+    .modify_andmask(0x30, bytearray([0b11111100, 0b00000000])) \
     .build()
 
 def _castlevania_extract_overlays(rom: N64Rom,
@@ -294,7 +330,6 @@ def _castlevania_extract_overlays(rom: N64Rom,
                           ram_load_address,
                           extracted_rom_addresses)
 
-
 def castlevania_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -309,13 +344,26 @@ def castlevania_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.initial_program_counter(preamble.crt_entry_point())
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
 
-    overlay_load_fcn_offset = CASTLEVANIA_LOAD_OVERLAY_FCN.find(bootexe)
-    if overlay_load_fcn_offset is None:
+    nisitenma_table_offset = _nisitenma_find_table_offset(bootexe)
+    if nisitenma_table_offset is None:
         return None
+
+    logger.info("found Konami Nisitenma-Ichigo resource table in RAM at 0x%08x",
+                ipc + nisitenma_table_offset)
+
+    _, overlay_load_fcn_offset = \
+        pick_pattern(bootexe,
+                     [ CASTLEVANIA_LOAD_OVERLAY_FCN,
+                       NBAITZ_LOAD_OVERLAY_FCN ]
+                       )
+
+    if overlay_load_fcn_offset is None:
+        logger.error("can't find main cartridge read routine")
+        raise RuntimeError("raising exception to stop try-all-unpackers unpack!")
     
     overlay_load_fcn_address = ipc+overlay_load_fcn_offset
 
-    logger.info("found Konami Castlevania overlay loader at 0x%08x", overlay_load_fcn_address)
+    logger.info("found Konami Castlevania-style overlay loader at 0x%08x", overlay_load_fcn_address)
 
     overlay_load_call_pattern = SignatureBuilder() \
     .pattern([
