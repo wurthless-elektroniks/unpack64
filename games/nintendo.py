@@ -113,7 +113,7 @@ def sm64_unpack(rom: N64Rom, ipc: int) -> Bffi:
                 rom_end_address,
                 load_address)
     
-    # not sure to make it a fix or seg, have to read the decomp more
-    builder.seg(load_address, rom.read_bytes(rom_start_address, rom_end_address-rom_start_address))
+    # called only once in game/main.c and never again after that
+    builder.fix(load_address, rom.read_bytes(rom_start_address, rom_end_address-rom_start_address))
 
     return builder.build()

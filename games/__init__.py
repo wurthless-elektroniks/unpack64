@@ -4,6 +4,7 @@ Game-specific unpacker drivers.
 
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
+from .dma import sssv_unpack, bodyharvest_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
@@ -613,6 +614,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Super Mario 64 - Shindou Edition (J) [!]
     "f8807b5e28f1b1a31c5d3675d23ece73f949ccb553dcbb07972666a1e76adfa2": sm64_unpack,
+
+    # ------------------------------------------------------
+    # DMA Design
+    # ------------------------------------------------------
+
+    # Space Station Silicon Valley (U) [!]
+    "b125bf0d761547ba878e44ef83f9e1ec3f400da7c46cf9a404b6caee6f9ba473": sssv_unpack,
+
+    # Space Station Silicon Valley (E) (M7) [!]
+    "0b13e3a0d4c7eaeda6556fdcad9bf0e6aefad2696c827a820786bb123e9387b0": sssv_unpack,
+
+    # Body Harvest (U) [!]
+    "d4b2654d6d903e43454bffdf025eeb4a954d8fafefab64dc5f8cf0e6dd392a74": bodyharvest_unpack,
+
+    # Body Harvest (E) (M3) [!]
+    "e0340a9656384420eab6c92ac6e2d0b6eba38cb527cf1ec26e4b2057964984a4": bodyharvest_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
