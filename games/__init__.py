@@ -19,7 +19,7 @@ from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
-from .nintendo import sm64_unpack, drmario_unpack
+from .nintendo import sm64_unpack, drmario_unpack, dobutsu_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -619,6 +619,9 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Dr. Mario 64 (U) [!]
     "bb2c0dec0a8287ad256929563d0509801c2f239df883c1cf52cab05b23bd77b6": drmario_unpack,
+
+    # Doubutsu no Mori (J) [!]
+    "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
 
     # ------------------------------------------------------
     # DMA Design
