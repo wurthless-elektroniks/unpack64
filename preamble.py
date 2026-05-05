@@ -942,6 +942,52 @@ def _ident_alt_libultra_many_bss(bootexe: bytearray, ipc: int) -> Preamble | Non
 
     return preamble
 
+# type 6, seen on Knockout Kings 2000, does not have the
+# "skip bss loop if bss size is zero" branch
+ALT_LIBULTRA_PREAMBLE_TYPE_6 = SignatureBuilder() \
+    .pattern([
+        0x3C, 0x1D, 0x80, WILDCARD,         # +$00 lui sp,0x80xx    - set initial stack pointer, typically to 0x803FFFF0 at end of RDRAM
+        0x27, 0xBD, WILDCARD, WILDCARD,     # +$04 ori sp,sp,#### (Battletanx and others use addiu $sp,$sp,...)
+        0x3C, 0x08, 0x80, WILDCARD,         # +$08 lui t0,0x80xx
+        0x25, 0x08, WILDCARD, WILDCARD,     # +$0C addiu t0,t0,#### - BSS start position
+        0x3C, 0x09, 0x80, WILDCARD,         # +$10 lui t1,0x80xx
+        0x25, 0x29, WILDCARD, WILDCARD,     # +$14 addiu t0,t0,#### - BSS end position
+        0x25, 0x08, 0x00, 0x04,             # +$18 addiu t0,t0,4
+        0x01, 0x09, 0x08, 0x2b,             # +$1C sltu at,t0,t1
+        0x14, 0x20, 0xff, 0xfd,             # +$20 bne at,zero,...  - clear bss 4 bytes at a time
+        0xAD, 0x00, 0xFF, 0xFC,             # +$24 sw zero,-0x04(t0)
+        0x08, WILDCARD, WILDCARD, WILDCARD, # +$28 jal crt_entry (0x08 catches jal and j opcodes)
+        0x00, 0x00, 0x00, 0x00,             # +$2C nop
+    ]) \
+    .modify_andmask(0x04, bytes([0xEF])) \
+    .modify_andmask(0x28, bytes([0xF8])) \
+    .size(0x30) \
+    .xref_op32_hi16("initial_sp", 0x00) \
+    .xref_op32_lo16("initial_sp", 0x04) \
+    .xref_op32_hi16("bss_start_address", 0x08) \
+    .xref_op32_lo16("bss_start_address", 0x0C) \
+    .xref_op32_hi16("bss_end_address", 0x10) \
+    .xref_op32_lo16("bss_end_address", 0x14) \
+    .xref_j_imm26("crt_entry", 0x28) \
+    .build()
+
+def _ident_alt_libultra_type_6(bootexe: bytearray, ipc: int) -> Preamble | None:
+    if ALT_LIBULTRA_PREAMBLE_TYPE_6.compare(bootexe) is False:
+        return None
+
+    xrefs = ALT_LIBULTRA_PREAMBLE_TYPE_6.xrefs(ipc, bootexe)
+
+    crt_entry_point        = xrefs["crt_entry"].get_address()
+    initial_stack_pointer  = xrefs["initial_sp"].get_address()
+
+    preamble = Preamble("libultra alt. (nustd?), type 6",
+                    initial_stack_pointer,
+                    crt_entry_point,
+                    0x30)
+
+    preamble.add_bss(xrefs["bss_start_address"].get_address(), xrefs["bss_end_address"].get_address())
+    return preamble
+
 def _ident_nustd(bootexe: bytearray, ipc: int) -> Preamble | None:
     return _try_ident_preamble([
         _ident_alt_libultra_type_1,
@@ -949,6 +995,7 @@ def _ident_nustd(bootexe: bytearray, ipc: int) -> Preamble | None:
         _ident_alt_libultra_type_3,
         _ident_alt_libultra_type_4,
         _ident_alt_libultra_type_5,
+        _ident_alt_libultra_type_6,
         _ident_alt_libultra_many_bss,
     ], bootexe, ipc)
 
