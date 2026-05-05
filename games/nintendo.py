@@ -2,8 +2,9 @@
 Unsorted Nintendo games with not much segment loading
 '''
 
-import struct
 import logging
+import struct
+import zlib
 
 from bffi import Bffi,BffiBuilder
 from n64rom import N64Rom
@@ -115,5 +116,94 @@ def sm64_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     # called only once in game/main.c and never again after that
     builder.fix(load_address, rom.read_bytes(rom_start_address, rom_end_address-rom_start_address))
+
+    return builder.build()
+
+# ------------------------------------------------
+#
+# Dr. Mario 64
+#
+# zlib... what a yawner!!
+#
+# ------------------------------------------------
+
+DRMARIO_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe0,             # +0x00 addiu      sp,sp,-0x20
+        0xaf, 0xb1, 0x00, 0x14,             # +0x04 sw         s1,0x14(sp)
+        0x00, 0x80, 0x88, 0x21,             # +0x08 move       s1,a0
+        0x3c, 0x04, WILDCARD, WILDCARD,     # +0x0C lui        a0,0x1       <-- 16 byte header address in ROM
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x10 addiu      a0,a0,0x1a60
+        0xaf, 0xb0, 0x00, 0x10,             # +0x14 sw         s0,0x10(sp)
+        0x3c, 0x10, 0x80, WILDCARD,         # +0x18 lui        s0,0x8003
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x1C addiu      s0,s0,-0x63c0
+        0x02, 0x00, 0x28, 0x21,             # +0x20 move       a1,s0
+        0x3c, 0x06, 0x00, WILDCARD,         # +0x24 lui        a2,0x1
+        0x24, 0xc6, WILDCARD, WILDCARD,     # +0x28 addiu      a2,a2,0x1a70
+        0xaf, 0xbf, 0x00, 0x18,             # +0x2C sw         ra,0x18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x30 jal        copy_from_rom
+        0x00, 0xc4, 0x30, 0x23,             # +0x34 _subu      a2,a2,a0
+        0x3c, 0x04, 0x00, WILDCARD,         # +0x38 lui        a0,0x1
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x3C addiu      a0,a0,0x1a7
+        0x8e, 0x05, 0x00, 0x00,             # +0x40 lw         a1,0x0(s0)
+        0x3c, 0x06, 0x00, WILDCARD,         # +0x44 lui        a2,0x5
+        0x24, 0xc6, WILDCARD, WILDCARD,     # +0x48 addiu      a2,a2,-0x680
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x4C jal        FUN_80002380 <-- read and zlib decompress main exe
+        0x00, 0xc4, 0x30, 0x23,             # +0x50 _subu      a2,a2,a0
+    ]) \
+    .const_op32_hi16("rom_exe_header_address", 0x0C) \
+    .const_op32_lo16("rom_exe_header_address", 0x10) \
+    .const_op32_hi16("rom_exe_data_start_address", 0x38) \
+    .const_op32_lo16("rom_exe_data_start_address", 0x3C) \
+    .const_op32_hi16("rom_exe_data_end_address", 0x44) \
+    .const_op32_lo16("rom_exe_data_end_address", 0x48) \
+    .build()
+
+def drmario_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    builder = BffiBuilder()
+    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+
+    bootexe = rom.boot_exe()[:earliest_bss-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+
+    load_pattern_offset = DRMARIO_LOAD_PATTERN.find(bootexe)
+    if load_pattern_offset is None:
+        return None
+    
+    logger.info("found Dr. Mario zlib loader")
+
+    consts = DRMARIO_LOAD_PATTERN.consts(ipc, bootexe, load_pattern_offset)
+    rom_exe_header_address = consts["rom_exe_header_address"].get_value()
+    rom_exe_data_start_address = consts["rom_exe_data_start_address"].get_value()
+    rom_exe_data_end_address = consts["rom_exe_data_end_address"].get_value()
+    
+    header = rom.read_bytes(rom_exe_header_address, 0x10)
+    load_address, entry_point, bss_start, bss_end = struct.unpack(">IIII", header)
+
+    logger.info("compressed main segment in ROM: 0x%08x-0x%08x -> RAM 0x%08x (bss 0x%08x-0x%08x)",
+                rom_exe_data_start_address,
+                rom_exe_data_end_address,
+                load_address,
+                bss_start,
+                bss_end)
+
+    logger.info("loading and inflating the payload...")
+
+    payload = rom.read_bytes(rom_exe_data_start_address, rom_exe_data_end_address-rom_exe_data_start_address)
+    payload = zlib.decompress(payload, wbits=-15)
+
+    logger.info("inflated OK, uncompressed size %d", len(payload))
+    builder.fix(load_address, payload)
+    builder.bss(bss_start, bss_end-bss_start)
+
+    # TODO: main segment will zlib decompress other resources...
+    # are any of them overlays? probably not if the game is only 4 MB
 
     return builder.build()

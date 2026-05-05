@@ -19,7 +19,7 @@ from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
-from .nintendo import sm64_unpack
+from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -616,6 +616,9 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Super Mario 64 - Shindou Edition (J) [!]
     "f8807b5e28f1b1a31c5d3675d23ece73f949ccb553dcbb07972666a1e76adfa2": sm64_unpack,
+
+    # Dr. Mario 64 (U) [!]
+    "bb2c0dec0a8287ad256929563d0509801c2f239df883c1cf52cab05b23bd77b6": drmario_unpack,
 
     # ------------------------------------------------------
     # DMA Design
