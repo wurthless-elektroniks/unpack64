@@ -5,6 +5,7 @@ Game-specific unpacker drivers.
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
+from .dualheroes import dualheroes_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -647,6 +648,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Excitebike 64 (U) (Kiosk Demo) [!]
     "cd056cc339b30b77d9a7afa99bc7f9203d655ba9e34ee4048cc0b36982458263": excitebike_unpack,
+    
+    # ------------------------------------------------------
+    # Dual Heroes
+    # ------------------------------------------------------
+
+    # Dual Heroes (U) [!]
+    "5715846bd3bf7da5c296e10384b7ff4ff6e94ee315856c4ad275d5c2ed9bd712": dualheroes_unpack,
+
+    # Dual Heroes (J) [!]
+    "2d390313b93fbc838ddda8225901f994d5953191853ed3f7549f48720767930c": dualheroes_unpack,
+
+    # Dual Heroes (E) [!]
+    "292ffc02db47118a4b94a5581394c2edf41d16f0f1d42e9cbfae73dad78f0b2f": dualheroes_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
