@@ -7,6 +7,7 @@ from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
+from .excitebike import excitebike_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_us_unpack, rogue_jp_unpack, indy_unpack
 from .forsaken import forsaken_unpack
@@ -630,6 +631,22 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Body Harvest (E) (M3) [!]
     "e0340a9656384420eab6c92ac6e2d0b6eba38cb527cf1ec26e4b2057964984a4": bodyharvest_unpack,
+
+    # ------------------------------------------------------
+    # Excitebike 64
+    # ------------------------------------------------------
+
+    # Excitebike 64 (U) [!]
+    "2909229be3cdaac1b5ead544648b970a23e8ea83c2c3a7f891ce121fefe918cc": excitebike_unpack,
+
+    # Excitebike 64 (J) [!]
+    "a2227d626690256f6d1242d5fe7c9bbbf8fa5aec2d803a0a138e1e09dd26b635": excitebike_unpack,
+
+    # Excitebike 64 (E) [!]
+    "a28143f7dc16e905ca4da25665875a2b0d5489bcc7310ce4465637537ab096d0": excitebike_unpack,
+
+    # Excitebike 64 (U) (Kiosk Demo) [!]
+    "cd056cc339b30b77d9a7afa99bc7f9203d655ba9e34ee4048cc0b36982458263": excitebike_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

@@ -1077,10 +1077,12 @@ def identify_preamble(bootexe: bytearray, ipc: int) -> Preamble | None:
     Identifies preamble. Return a Preamble on success, None if couldn't be identified.
     '''
     
-    # Excitebike 64 tries to be cute with its first two opcodes,
-    # so we detect this in advance and skip past it
-    if bootexe[0:8] == bytes([0x3C, 0x08, 0xBE, 0xEF, 0x35, 0x08, 0xDE, 0xAD]):
-        logger.debug("excitebike 64 programmers tried to be funny, skipping past useless instructions")
+    # Excitebike 64 uses these for catching memory corruption problems;
+    # if things change the game locks itself up.
+    # 0xBEEFDEAD is used for the bootloader, 0xDEADBEEF is used for the main executable.
+    if bootexe[0:8] == bytes([0x3C, 0x08, 0xBE, 0xEF, 0x35, 0x08, 0xDE, 0xAD]) or \
+       bootexe[0:8] == bytes([0x3C, 0x08, 0xDE, 0xAD, 0x35, 0x08, 0xBE, 0xEF]):
+        logger.debug("excitebike 64 memory corruption guard skipped over")
         return identify_preamble(bootexe[8:],ipc+8)
 
     if bootexe[0] == 0x3C and bootexe[1] == 0x08:
