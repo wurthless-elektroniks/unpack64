@@ -97,6 +97,32 @@ and code analysis tools out there tell their users to just make a savestate or m
 dump from an emulator instead of implementing all of these unpackers themselves.
 Nobody is that much of an insane idiot to do that, anyways. Except for me, of course.
 
+### I am a boring nerd and that shit sounds interesting. Which are the most interesting games?
+
+Dynamically loaded and relocatable code segments:
+
+- 1080 Snowboarding
+- Beetle Adventure Racing!
+- Dobutsu no Mori / Animal Forest (uses the Zelda framework)
+- Duck Dodgers Starring Daffy Duck
+- Indy Racing 2000
+- F-1 World Grand Prix
+- F-1 World Grand Prix II
+- Zelda: Ocarina of Time
+- Zelda: Majora's Mask
+
+Using the TLB and a heap to treat the ROM as RAM and execute code from it:
+
+- Indiana Jones and the Infernal Machine (Factor 5)
+- Perfect Dark
+- Star Wars Episode 1: Battle for Naboo (Factor 5)
+
+Serious boot executable abuse:
+
+- Excitebike 64: Boot executable displays the "N64 SPORTS" logo while it loads
+  the main code (its own boot executable), then runs it. The "N64 SPORTS" logo
+  code is completely unloaded afterwards.
+
 ## License
 
 Public domain

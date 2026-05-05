@@ -19,7 +19,7 @@ from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
-from .nintendo import sm64_unpack, drmario_unpack, dobutsu_unpack
+from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
@@ -29,6 +29,7 @@ from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_u
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
+from .zelda import dobutsu_unpack
 
 
 # points hash -> unpacker function.
@@ -620,9 +621,6 @@ GAME_SPECIFIC_UNPACKERS = {
     # Dr. Mario 64 (U) [!]
     "bb2c0dec0a8287ad256929563d0509801c2f239df883c1cf52cab05b23bd77b6": drmario_unpack,
 
-    # Doubutsu no Mori (J) [!]
-    "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
-
     # ------------------------------------------------------
     # DMA Design
     # ------------------------------------------------------
@@ -667,6 +665,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Dual Heroes (E) [!]
     "292ffc02db47118a4b94a5581394c2edf41d16f0f1d42e9cbfae73dad78f0b2f": dualheroes_unpack,
+
+
+    # ------------------------------------------------------
+    # Zelda games and other Nintendo junk using the same framework
+    # ------------------------------------------------------
+
+    # Doubutsu no Mori (J) [!]
+    "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
+
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
