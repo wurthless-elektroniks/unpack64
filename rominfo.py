@@ -59,7 +59,7 @@ f"""
         CRC32:     {rom.crc32():08x}
         load address/ipc:  {ipc:08x}""")
     
-    if rom.sha256() in GAME_SPECIFIC_UNPACKERS:
+    if rom.sha256() in GAME_SPECIFIC_UNPACKERS and GAME_SPECIFIC_UNPACKERS[rom.sha256()] is not None:
         print(\
 """
         !! this has a game-specific unpacker registered !!""")
@@ -92,7 +92,7 @@ f"""
             print( \
 f"        bss: {bss[0]:08x} ~ {bss[1]:08x} ({bss[1]-bss[0]} bytes)")
         print( \
-f"        code: {ipc:08x} ~ {earliest_bss_loc:08x} ({earliest_bss_loc-ipc} bytes)")
+f"        code: {ipc:08x} ~ {earliest_bss_loc:08x} (ROM 0x001000-0x{(earliest_bss_loc-ipc)+0x1000:06x}) ({earliest_bss_loc-ipc} bytes)")
 
 
 

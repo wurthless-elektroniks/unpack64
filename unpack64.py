@@ -114,17 +114,21 @@ def unpack_rom(rom: N64Rom,
     
     logger.info("rom sha256 is: %s", rom_hash)
 
+    game_is_single_load = False
+
     if rom_hash in GAME_SPECIFIC_UNPACKERS:
-        cic = get_cic(rom)
-        bootexe_entry_point = cic.entry_point(rom)
-        logger.info("bootexe entry point: 0x%08x", bootexe_entry_point)
+        if GAME_SPECIFIC_UNPACKERS[rom_hash] is not None:
+            cic = get_cic(rom)
+            bootexe_entry_point = cic.entry_point(rom)
+            logger.info("bootexe entry point: 0x%08x", bootexe_entry_point)
 
-        logger.info("game-specific unpacker found, jumping to it...")
-        unpack_fcn = GAME_SPECIFIC_UNPACKERS[rom_hash]
+            logger.info("game-specific unpacker found, jumping to it...")
+            unpack_fcn = GAME_SPECIFIC_UNPACKERS[rom_hash]
 
-        return unpack_fcn(rom, bootexe_entry_point)
+            return unpack_fcn(rom, bootexe_entry_point)
+        game_is_single_load = True
     
-    if try_all_unpackers:
+    if game_is_single_load is False and try_all_unpackers:
         unpackers = set(GAME_SPECIFIC_UNPACKERS.values())
 
         for unpacker in unpackers:
@@ -136,7 +140,11 @@ def unpack_rom(rom: N64Rom,
 
         logger.warning("could not find an unpacker for this ROM...")
 
-    logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results).")
+    if game_is_single_load:
+        logger.info("game is known to be a single-load game, running in automatic mode.")
+    else:
+        logger.warning("no game specific unpacker found for this ROM, running in automatic mode (can produce invalid results).")
+    
     return auto_unpack(rom)
 
 def main():

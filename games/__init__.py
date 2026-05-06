@@ -686,4 +686,13 @@ GAME_SPECIFIC_UNPACKERS = {
     #"a182ff273697bd337c17be427041a1dee6dec0f90d7d62407843c5eabb7e6ef0": tlb_try_detect_singleton,
 
     # ------------------------------------------------------
+    # Confirmed single-load games
+    #
+    # Any game that does not need to be unpacked should be blacklisted
+    # by setting its unpacker to None
+    # ------------------------------------------------------
+
+    # Jinsei Game 64 (J) [!] - appears to be single-load
+    # "bfa3cbe991967318eecabac89883427ec29cf071373e97751dccc99cd7efe70d": None,
+
 }
