@@ -7,7 +7,7 @@ from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
-from .ea import nhl99_unpack
+from .ea import nhl99_unpack, nbalive2k_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -592,11 +592,17 @@ GAME_SPECIFIC_UNPACKERS = {
     # NBA In the Zone '98 (J) [!]
     "8ac071ecf2786a3e3b14b7b10f2ef060c7c1bfb17a7a5621c4f3bc6e5bca35fe": castlevania_unpack,
 
+    # NBA Pro 98 (E) [!]
+    "90ed10e89d507758551d40e549520228acba39eccd495a4c3088b0e73f6c63c9": castlevania_unpack,
+
     # NBA In the Zone '99 (U) [!]
     "4189751eb5fc07932c7a440c7b448f8929ef8eba104aa1425f430737f284d609": castlevania_unpack,
 
     # NBA In the Zone 2 (J) [!]
     "74f80f1aa04eb5103bdf014d327b3aa707da45ba77e9f005d970764209d3c09e": castlevania_unpack,
+
+    # NBA Pro 99 (E) [!]
+    "765bb9b7b8f7a5660ac27459b92ef111e58ff710a88ff70599622492f0b2b96e": castlevania_unpack,
 
     # NHL Blades of Steel '99 (U) [!]
     "779fa692d07c6a322e189ec80183cb5fa700bbae1c8d5476a78d4ace3cfa4434": castlevania_unpack, 
@@ -685,6 +691,18 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NHL 99 (E) [!]
     "1660afff428682d1b4852239bc4fab2e35b2fd14d6c2d9d339269430702df731": nhl99_unpack,
+
+    # NBA Live 2000 (U) (M4) [!]
+    "3f36da957e6e578f029adbe183d76a2c94352d90dd9ef75ddb3e151ea367eca7": nbalive2k_unpack,
+
+    # NBA Live 2000 (E) (M4) [!]
+    "d0c85a3035687673be6b4c38cfba3728a6c50cf7beee36fc3a8572f4013a512b": nbalive2k_unpack,
+
+    # NBA Live 99 (U) (M5) [!]
+    "1c37eb542195ca5a85eb0e2e67a92c34ff6700b0f7442e04a73b0fe79098381b": nbalive2k_unpack,
+
+    # NBA Live 99 (E) (M5) [!]
+    "f21ddf33f8e597a0b49e1dde2b0d9cf55d2b8fd007cf20a92996a0783f7de411": nbalive2k_unpack,
 
     # ------------------------------------------------------
     # Acclaim games using TLB but no packing
