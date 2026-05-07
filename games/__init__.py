@@ -2,6 +2,7 @@
 Game-specific unpacker drivers.
 '''
 
+from .acclaim import armorines_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
@@ -684,6 +685,33 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NHL 99 (E) [!]
     "1660afff428682d1b4852239bc4fab2e35b2fd14d6c2d9d339269430702df731": nhl99_unpack,
+
+    # ------------------------------------------------------
+    # Acclaim games using TLB but no packing
+    #
+    # n.b.: Turok 2 kiosk demo does NOT use the TLB at all
+    # ------------------------------------------------------
+
+    # Armorines - Project S.W.A.R.M. (U) [!]
+    "6c999d00089e384a1d85bec52c3474d789f905a49726fc1d901cdc367ebf7524": armorines_unpack,
+
+    # Armorines - Project S.W.A.R.M. (E) [!]
+    "558588b3649c7313cc694610ce81344dfe9a829d63e315c7c108d1a27d7d987b": armorines_unpack,
+
+    # Armorines - Project S.W.A.R.M. (G) [!]
+    "aebd316ab12bae8bf84f2cab21023a3cb08ae1bec04f6bc574cad415dfb3c090": armorines_unpack,
+
+    # Turok 2 - Seeds of Evil (U) (V1.0) [!]
+    "a182ff273697bd337c17be427041a1dee6dec0f90d7d62407843c5eabb7e6ef0": armorines_unpack,
+
+    # Turok 2 - Seeds of Evil (E) [!]
+    "6c8ec2083adeb6eb7bc0aad865384f77a8f89a98ff21b74a630dd85e8256ebf8": armorines_unpack,
+
+    # Turok 2 - Seeds of Evil (G) [!]
+    "7545e13528bad67c540668777322ed82e69d7d76efdcd46e6bf46a48a1289f5d": armorines_unpack,
+
+    # Violence Killer - Turok New Generation (J) [b1]
+    "78eada162ac94ffef6ab1fcd0aefeef01c69151d1b5c1abf6ebe74e56aa96077": armorines_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy

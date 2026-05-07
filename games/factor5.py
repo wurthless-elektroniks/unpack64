@@ -9,7 +9,7 @@ import logging
 import struct
 
 from preamble import identify_preamble
-from tlb import tlb_try_detect_preamble
+from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
 from mips import disassemble_jump_imm26_target
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
@@ -248,7 +248,7 @@ def indy_unpack(rom: N64Rom, ipc: int) -> Bffi:
     entry_01 = BffiTlbEntry()
     entry_01.pagemask(0x1FE000)
     entry_01.entryhi(0x41000000)
-    entry_01.entrylo0( (0x003000 >> 6) | 0x1F )
+    entry_01.entrylo0( tlb_pack_entrylo(0x00300000, 0x1F) )
     entry_01.entrylo1( 1 )
     tlb.entry(0x01, entry_01)
 

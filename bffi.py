@@ -452,8 +452,11 @@ class BffiTlb(object):
         entrylo     = tlb_entry_tuple[1]
         page_mask   = (tlb_entry_tuple[0].pagemask() >> 1) | 0x0FFF
 
-        physical_page_number = (entrylo >> 6) & 0xFFFFFF
-        return (address & page_mask) | (physical_page_number * PAGE_SIZE_LUT[tlb_entry_tuple[0].pagemask()])
+        # this is probably not the correct way to do this,
+        # but it's what makes sense.
+        # bugs will have to be fixed later.
+        physical_page_number = ((entrylo & 0xFFFFFFC0) << 6)
+        return (address & page_mask) | physical_page_number
 
     def print_info(self):
         pass

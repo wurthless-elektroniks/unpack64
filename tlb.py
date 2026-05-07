@@ -33,6 +33,10 @@ from preamble import identify_preamble, Preamble
 logger = logging.getLogger(__name__)
 
 
+def tlb_pack_entrylo( page_physical_address, flags ) -> int:
+    pfn = (page_physical_address >> 6) & 0xFFFFFFC0
+    flags &= 0x1F
+    return pfn | flags
 
 def _ident_preamble_common(rom: N64Rom,
                            ipc: int,
@@ -82,9 +86,9 @@ def _ident_preamble_common(rom: N64Rom,
 # a0,a1,a2 are written to cop0 (mtc0) immediately without modifications.
 # then:
 # - default EntryLo0 to 0x00000001, which sets the global flag.
-# - if a3 is not -1, then set EntryLo0 to (a3 << 6) | entrylo_flags
+# - if a3 is not -1, then set EntryLo0 to (a3 >> 6) | entrylo_flags
 # - default EntryLo1 to 0x00000001
-# - if 0x10(sp) not -1, then set EntryLo1 to (0x10(sp) << 6) | entrylo_flags
+# - if 0x10(sp) not -1, then set EntryLo1 to (0x10(sp) >> 6) | entrylo_flags
 #
 # Re-Volt:
 # - pagemask 0x1FE000 (1mbytes pages),
@@ -199,8 +203,9 @@ def tlb_try_detect_singleton(rom: N64Rom,
     entry_1f = BffiTlbEntry()
     entry_1f.pagemask(pagemask)
     entry_1f.entryhi(entryhi)
-    entry_1f.entrylo0( (entrylo0 << 6) | 0x1F if entrylo0 != -1 else 1 )
-    entry_1f.entrylo1( (entrylo1 << 6) | 0x1F if entrylo1 != -1 else 1 )
+    # TODO: confirm this... could be wrong
+    entry_1f.entrylo0( tlb_pack_entrylo(entrylo0, 0x1F) if entrylo0 != -1 else 1 )
+    entry_1f.entrylo1( tlb_pack_entrylo(entrylo1, 0x1F) if entrylo1 != -1 else 1 )
     tlb.entry(0x1F, entry_1f)
 
     logger.info(\
@@ -292,8 +297,8 @@ def tlb_try_detect_factor5_stub(rom: N64Rom,
     entry_00 = BffiTlbEntry()
     entry_00.pagemask(0x7FE000)
     entry_00.entryhi(0x40000000)
-    entry_00.entrylo0( (0 >> 6) | 0x1F )
-    entry_00.entrylo1( (0x400000 >> 6) | 0x1F )
+    entry_00.entrylo0( tlb_pack_entrylo(0x00000000, 0x1F) )
+    entry_00.entrylo1( tlb_pack_entrylo(0x00400000, 0x1F) )
     tlb.entry(0x00, entry_00)
 
     tlb.wired(1)

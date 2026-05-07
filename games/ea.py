@@ -183,8 +183,12 @@ def nhl99_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # ----------------------------------------------------------
 #
 # WCW Backstage Assault
+# WCW Mayhem
 #
 # Loads main overlays from the BIGF blob.
 # Files are Refpack-compressed.
+#
+# The main segment does not use BSS, it instead relies on IPL3 loading in
+# a bunch of zeroes to do BSS clearing.
 #
 # ----------------------------------------------------------
