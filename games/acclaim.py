@@ -184,3 +184,127 @@ def armorines_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # TODO: turok 2 needs more segments
 
     return builder.build()
+
+# ----------------------------------------------------------------------
+#
+# South Park
+# Similar to Turok 2
+# 
+# This game will try to re-read the first 1 MB of cartridge space in its boot routine.
+# There's not much point in doing this other than to slow down the boot,
+# or maybe to cause problems if someone tries to overwrite the bootexe
+# with a horrible crack intro. This can be patched out very easily however.
+#
+# Once the game is running it will load the main overlay at 0xC4000 to high
+# memory and then set up TLB entry 0 to point 0x00400000 at it.
+#
+# ----------------------------------------------------------------------
+
+# different register usage / jump location than turok 2
+SOUTHPARK_BSS_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x03, 0x80, WILDCARD,     # +0x00 lui        v1,0x800c
+        0x24, 0x63, WILDCARD, WILDCARD, # +0x04 addiu      v1,v1,0x2000
+        0x3c, 0x04, 0x80, WILDCARD,     # +0x08 lui        a0,0x8012
+        0x24, 0x84, WILDCARD, WILDCARD, # +0x0C addiu      a0,a0,-0x2000
+        0x00, 0x64, 0x10, 0x2b,         # sltu       v0,v1,a0
+        0x10, 0x40, 0x00, 0x06,         # beq        v0,zero,LAB_0022bd74
+    ]) \
+    .const_op32_hi16("bss_start", 0x00) \
+    .const_op32_lo16("bss_start", 0x04) \
+    .const_op32_hi16("bss_end", 0x08) \
+    .const_op32_lo16("bss_end", 0x0C) \
+    .build()
+
+# hardcodes 0xB0xx prefix in lui instead of ORing to a base address
+SOUTHPARK_MAIN_SEGMENT_SETUP_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x05, 0xb0, WILDCARD,     # lui        a1,0xb00c
+        0x24, 0xa5, WILDCARD, WILDCARD, # addiu      a1,a1,0x4000
+        0xae, 0x22, WILDCARD, WILDCARD, # sw         v0,0xcc4(s1)
+        0x3c, 0x02, 0xb0, 0x00,         # lui        v0,0xb000
+    ]) \
+    .const_op32_hi16("main_segment_rom_address", 0x00) \
+    .const_op32_lo16("main_segment_rom_address", 0x04) \
+    .build()
+
+def southpark_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
+    
+    entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point())
+    if entry_point_phys is None:
+        logger.error("entry point in unmapped TLB space!!")
+        return None
+    entry_point_phys += 0x80000000
+
+    # sexy steve is not present (and presumably not welcome) in south park
+    # so we'll search for the BSS range instead
+
+    bootexe = rom.boot_exe()
+
+    bss_offset = SOUTHPARK_BSS_PATTERN.find(bootexe)
+    if bss_offset is None:
+        return None
+    
+    consts = SOUTHPARK_BSS_PATTERN.consts(ipc, bootexe, bss_offset)
+    bss_start = consts["bss_start"].get_value()
+    bss_end   = consts["bss_end"].get_value()
+
+    logger.info("found South Park BSS init, BSS is at: 0x%08x-0x%08x", bss_start, bss_end)
+
+    bootexe = bootexe[:bss_start-ipc]
+
+    main_segment_setup_offset = SOUTHPARK_MAIN_SEGMENT_SETUP_PATTERN.find(bootexe)
+    if main_segment_setup_offset is None:
+        logger.info("can't find main segment setup")
+        return None
+    
+    consts = SOUTHPARK_MAIN_SEGMENT_SETUP_PATTERN.consts(ipc, bootexe, main_segment_setup_offset)
+    main_segment_rom_address = consts["main_segment_rom_address"].get_value() & 0x03FFFFFF
+
+    # everything past this point is a copypaste of the armorines code above.
+    # TODO: unify this later, or find some way to clean it up
+
+    loadmap_mainseg_offset = ARMORINES_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.find( bootexe, main_segment_setup_offset)
+    if loadmap_mainseg_offset is None:
+        logger.error("can't find segment load and TLB map setup")
+        return None
+    consts = ARMORINES_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.consts(ipc, bootexe, loadmap_mainseg_offset)
+    main_segment_size = consts["main_segment_size"].get_value() & 0x03FFFFFF
+
+    logger.info("main segment in ROM at 0x%08x-0x%08x",
+                main_segment_rom_address,
+                main_segment_rom_address+main_segment_size)
+
+    main_segment = rom.read_bytes(main_segment_rom_address, main_segment_size)
+
+    # we will load this segment to 0x80380000
+    tlb_0 = BffiTlbEntry()
+    tlb_0.pagemask(0x07e000)
+    tlb_0.entryhi(0x00400000)
+    tlb_0.entrylo0( tlb_pack_entrylo(0x00380000, 0x1F) )
+    tlb_0.entrylo1( tlb_pack_entrylo(0x003C0000, 0x1F) )
+    tlb.entry(0, tlb_0)
+
+    if tlb.virtual_to_physical(0x00400000) != 0x00380000 or \
+       tlb.virtual_to_physical(0x00440000) != 0x003C0000:
+        raise RuntimeError("TLB mapping is incorrect, report bug. "
+                           f"{tlb.virtual_to_physical(0x00400000):08x} "
+                           f"{tlb.virtual_to_physical(0x00440000):08x} ")
+
+    logger.info("will map 0x80380000-0x803FFFFF to 0x00400000 for the main segment")
+
+    builder = BffiBuilder()
+    builder.initial_tlb(tlb)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.fix(ipc, bootexe)
+    builder.fix(0x00400000, main_segment)
+    builder.bss(bss_start, bss_end-bss_start)
+
+    # TODO: just like turok 2, more segments are currently at large.
+    # find the function that loads them, and dump 'em out
+
+    return builder.build()

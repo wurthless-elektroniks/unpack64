@@ -2,7 +2,7 @@
 Game-specific unpacker drivers.
 '''
 
-from .acclaim import armorines_unpack
+from .acclaim import armorines_unpack, southpark_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
@@ -712,6 +712,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Violence Killer - Turok New Generation (J) [b1]
     "78eada162ac94ffef6ab1fcd0aefeef01c69151d1b5c1abf6ebe74e56aa96077": armorines_unpack,
+
+    # South Park (U) [!]
+    "68e87dbae05414026a126cb6e0c632e7660668a0003e1e1c975df8296e2a36a6": southpark_unpack,
+
+    # South Park (E) (M3) [!]
+    "e0cdb6f2c756febffc10266a5bf93ee853a0393de2f18353174e569303d3252c": southpark_unpack,
+
+    # South Park (G) [!]
+    "346ddcf6d1259bd31389267009d2caac74ddf79f608dfd826705e7c9fbfdad9e": southpark_unpack,    
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
