@@ -6,6 +6,7 @@ from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
+from .ea import nhl99_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -674,6 +675,15 @@ GAME_SPECIFIC_UNPACKERS = {
     # Doubutsu no Mori (J) [!]
     "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
 
+    # ------------------------------------------------------
+    # EA games
+    # ------------------------------------------------------
+    
+    # NHL 99 (U) [!]
+    "bfab38dda9ff0fd465a2ce0eac9f604ca7806369bb02c711f625b9e111885c04": nhl99_unpack,
+
+    # NHL 99 (E) [!]
+    "1660afff428682d1b4852239bc4fab2e35b2fd14d6c2d9d339269430702df731": nhl99_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
