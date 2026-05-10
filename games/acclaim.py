@@ -122,6 +122,7 @@ def armorines_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # this string should be "sexysteve" on boot
     sysboot_magic = bootexe[sysboot_magic_offset:sysboot_magic_offset+9]
     if sysboot_magic != b'sexysteve':
+        logger.error("sexy steve not present")
         return None
 
     bss_prelude_offset = ARMORINES_BSS_PRELUDE_PATTERN.find(bootexe, check_pattern_offset)
@@ -308,3 +309,191 @@ def southpark_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # find the function that loads them, and dump 'em out
 
     return builder.build()
+
+# ----------------------------------------------------------------------
+#
+# Turok 3 - Shadow of Oblivion
+#
+# This game makes it clear as to why these games are trying to read from the ROM
+# at startup: because the main executable code could be larger than the 1 MB
+# that IPL3 can load.
+#
+# Sexy Steve has also been fired and in his place the game uses the
+# extremely boring magic string "BootNotDone".
+#
+# ----------------------------------------------------------------------
+
+TUROK3_EXTENDED_ROM_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x06, 0xb0, WILDCARD,     # +0x00 lui        a2,0xb010
+        0x34, 0xc6, WILDCARD, WILDCARD, # +0x04 ori        a2,a2,0x1000
+        0x3c, 0x05, 0x80, WILDCARD,     # +0x08 lui        a1,0x8010
+        0x34, 0xa5, WILDCARD, WILDCARD, # +0x0C ori        a1,a1,0x400
+        0x3c, 0x07, 0xa4, 0x60,         # +0x10 lui        a3,0xa460
+        0x34, 0xe7, 0x00, 0x10,         # +0x14 ori        a3=>DAT_a4600010,a3,0x10
+        0x3c, 0x04, 0x00, WILDCARD,     # +0x18 lui        a0,0x1
+        0x34, 0x84, WILDCARD, WILDCARD, # +0x1C ori        a0,a0,0xffff
+    ]) \
+    .const_op32_hi16("extload_rom_address", 0x00) \
+    .const_op32_lo16("extload_rom_address", 0x04) \
+    .const_op32_hi16("extload_ram_address", 0x08) \
+    .const_op32_lo16("extload_ram_address", 0x0C) \
+    .const_op32_hi16("extload_num_words",   0x18) \
+    .const_op32_lo16("extload_num_words",   0x1C) \
+    .build()
+
+TUROK3_BSS_PRELUDE_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, WILDCARD,     # +0x00 lui   v0,0x8011     <-- BSS start
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x04 addiu v0,v0,0x4b60
+        0x3c, 0x03, 0x80, WILDCARD,     # +0x08 lui   v1,0x8000
+        0x00, 0x43, 0x28, 0x25,         # +0x0C or    a1,v0,v1
+        0x3c, 0x02, 0x80, WILDCARD,     # +0x10 lui   v0,0x8019     <-- BSS end
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x14 addiu v0,v0,0x0
+        0x00, 0x43, 0x18, 0x25,         # +0x18 or    v1,v0,v1
+        0x00, 0xa3, 0x10, 0x2b,         # +0x1C sltu  v0,a1,v1
+    ]) \
+    .const_op32_hi16("bss_start", 0x00) \
+    .const_op32_lo16("bss_start", 0x04) \
+    .const_op32_hi16("bss_end", 0x10) \
+    .const_op32_lo16("bss_end", 0x14) \
+    .build()
+
+# main segment setup pattern identical to armorines
+# so it won't be repeated here
+
+# turok 3 uses 1 MB pages, and will load in oneshot to 0x80700000
+# if the expansion pak is detected. otherwise it probably loads
+# in chunks like the factor 5 and rare games do
+TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, 0x80, WILDCARD,         # lui        a0,0x800d     <-- handle to something
+        0x24, 0x84, WILDCARD, WILDCARD,     # addiu      a0,a0,0x1cd8
+        0x3c, 0x06, 0x00, WILDCARD,         # +0x08 lui        a2,0x4
+        0x24, 0xc6, WILDCARD, WILDCARD,     # +0x0C addiu      a2,a2,-0x3520 <-- segment load size
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        FUN_00201dbc 
+        0x02, 0x80, 0x38, 0x21,             # _move      a3,s4
+        
+        # TLB setup code must match this exactly
+        0x12, 0x80, 0x00, 0x0e,             # beq        s4,zero,LAB_0028da48
+        0x00, 0x00, 0x20, 0x21,             # _clear     a0
+        0x3c, 0x05, 0x00, 0x1f,             # lui        a1,0x1f        <-- pagemask (should be 0x1fe000 i.e., 1mbytes pages)
+        0x34, 0xa5, 0xe0, 0x00,             # ori        a1,a1,0xe000
+        0x3c, 0x06, 0x00, 0x40,             # lui        a2,0x40       <-- entryhi virtual address (should be 0x00400000)
+        0x3c, 0x07, 0x80, 0x00,             # lui        a3,0x8000     <-- a3 is entrylo0 (mapping 0x00400000-0x0043FFFF)
+        0x02, 0x87, 0x38, 0x21,             # addu       a3,s4,a3
+        0x24, 0x02, 0xff, 0xff,             # li         v0,-0x1 <-- EntryLo1 = -1 (do not map)
+        0xaf, 0xa2, 0x00, 0x10,             # sw         v0,local_20(sp)
+        0x24, 0x02, 0x00, 0x07,             # li         v0,0x7
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        FUN_002dcd50                                               undefined FUN_002dcd50()
+        0xaf, 0xa2, 0x00, 0x14,             # _sw        v0,local_1c(sp)
+    ]) \
+    .const_op32_hi16("main_segment_size", 0x08) \
+    .const_op32_lo16("main_segment_size", 0x0C) \
+    .build()
+
+def turok3_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
+    
+    entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point())
+    if entry_point_phys is None:
+        logger.error("entry point in unmapped TLB space!!")
+        return None
+    entry_point_phys += 0x80000000
+
+    bootexe = rom.boot_exe()
+
+    check_pattern_offset = ARMORINES_SYSTEMBOOT_CHECK_PATTERN.find(bootexe, entry_point_phys - ipc)
+    if check_pattern_offset is None:
+        return None
+    consts = ARMORINES_SYSTEMBOOT_CHECK_PATTERN.consts(ipc, bootexe, check_pattern_offset)
+    sysboot_magic_address = consts["sysboot_magic_address"].get_value()
+
+    sysboot_magic_offset = sysboot_magic_address-ipc
+
+    # rip sexysteve forever in are hearts
+    sysboot_magic = bootexe[sysboot_magic_offset:sysboot_magic_offset+11]
+    if sysboot_magic != b'BootNotDone':
+        return None
+
+    extload_offset = TUROK3_EXTENDED_ROM_LOAD_PATTERN.find(bootexe, check_pattern_offset)
+    if extload_offset is None:
+        return None
+
+    bss_prelude_offset = TUROK3_BSS_PRELUDE_PATTERN.find(bootexe, extload_offset)
+    if bss_prelude_offset is None:
+        return None
+    
+    logger.info("found Turok 3 bootstub")
+
+    consts = TUROK3_EXTENDED_ROM_LOAD_PATTERN.consts(0x00200400, bootexe, extload_offset)
+    extload_rom_address = consts["extload_rom_address"].get_value() & 0x03FFFFFF
+    extload_ram_address = consts["extload_ram_address"].get_value()
+    extload_sizeof      = (consts["extload_num_words"].get_value() + 1) * 4
+
+    if extload_ram_address != (ipc + 0x100000):
+        logger.error("extload RAM address did not follow bootexe")
+        return None
+
+    logger.info("game bootexe extends past IPL limit: 0x%08x-0x%08x",
+                extload_rom_address,
+                extload_rom_address+extload_sizeof)
+
+    bootexe = rom.boot_exe() + rom.read_bytes(extload_rom_address, extload_sizeof)
+
+    consts = TUROK3_BSS_PRELUDE_PATTERN.consts(0x00200400, bootexe, bss_prelude_offset)
+    bss_start = consts["bss_start"].get_value()
+    bss_end   = consts["bss_end"].get_value()
+
+    logger.info("BSS: 0x%08x-0x%08x", bss_start, bss_end)
+    bootexe = bootexe[:bss_start-ipc]
+
+    main_segment_setup_offset = ARMORINES_MAIN_SEGMENT_SETUP_PATTERN.find(bootexe)
+    if main_segment_setup_offset is None:
+        logger.info("can't find main segment setup")
+        return None
+    
+    consts = ARMORINES_MAIN_SEGMENT_SETUP_PATTERN.consts(ipc, bootexe, main_segment_setup_offset)
+    main_segment_rom_address = consts["main_segment_rom_address"].get_value() & 0x03FFFFFF
+
+    loadmap_mainseg_offset = TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.find(bootexe, main_segment_setup_offset)
+    if loadmap_mainseg_offset is None:
+        logger.error("can't find mainseg load/map")
+        return None
+    consts = TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.consts(ipc, bootexe, loadmap_mainseg_offset)
+    main_segment_size = consts["main_segment_size"].get_value() & 0x03FFFFFF
+
+    logger.info("main segment in ROM at 0x%08x-0x%08x",
+                main_segment_rom_address,
+                main_segment_rom_address+main_segment_size)
+
+    main_segment = rom.read_bytes(main_segment_rom_address, main_segment_size)
+
+    # it's obvious this needs the expansion pak to play nice
+    # so let's load it to expansion pak land
+    tlb_0 = BffiTlbEntry()
+    tlb_0.pagemask(0x1fe000)
+    tlb_0.entryhi(0x00400000)
+    tlb_0.entrylo0( tlb_pack_entrylo(0x00700000, 0x1F) )
+    tlb_0.entrylo1( 1 )
+    tlb.entry(0, tlb_0)
+
+    if tlb.virtual_to_physical(0x00400000) != 0x00700000:
+        raise RuntimeError("TLB mapping is incorrect, report bug. "
+                           f"{tlb.virtual_to_physical(0x00400000):08x} ")
+
+    logger.info("will map 0x80700000-0x807FFFFF to 0x00400000 for the main segment")
+
+    builder = BffiBuilder()
+    builder.required_memory_size(8)
+    builder.initial_tlb(tlb)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.fix(ipc, bootexe)
+    builder.fix(0x00400000, main_segment)
+    builder.bss(bss_start, bss_end-bss_start)
+
+    return builder.build()
+    

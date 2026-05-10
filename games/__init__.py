@@ -2,7 +2,7 @@
 Game-specific unpacker drivers.
 '''
 
-from .acclaim import armorines_unpack, southpark_unpack
+from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
@@ -759,6 +759,12 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # South Park (G) [!]
     "346ddcf6d1259bd31389267009d2caac74ddf79f608dfd826705e7c9fbfdad9e": southpark_unpack,    
+
+    # Turok 3 - Shadow of Oblivion (U) [!]
+    "9ac5a8049d6c0dce16fd0ac2898fb42fec42455ca8497d3244de215df1e6e096": turok3_unpack,
+
+    # Turok 3 - Shadow of Oblivion (E) [!]
+    "26520b99cbadf6a2f095ec94d898907901a9541703c34976f5f8c926bc90b706": turok3_unpack,
 
     # ------------------------------------------------------
     # Games using standard TLB but nothing else that's fancy
