@@ -338,8 +338,9 @@ NBAJAM2K_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .pattern([
         0x3c, 0x04, WILDCARD, WILDCARD, # lui        a0,0x13
         0x24, 0x84, WILDCARD, WILDCARD, # addiu      a0,a0,0x53f0
-        0x00, 0x80, 0xf8, 0x09,         # jalr       a0=>SUB_001353f0
+        0x00, 0x80, WILDCARD, 0x08,     # jalr       a0=>SUB_001353f0 (QBC '99 does a jr $a0)
     ]) \
+    .modify_andmask(0x0B, bytes([0b11111110])) \
     .const_op32_hi16("entrypoint", 0) \
     .const_op32_lo16("entrypoint", 4) \
     .build()
@@ -528,10 +529,10 @@ ALLSTAR2K_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
         0xaf, 0xbf, 0x00, 0x1c,             # +0x04 sw     ra,local_4(sp)
         0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x08 jal    FUN_80017c18    <-- another BSS section clear-er
         0xaf, 0xb0, 0x00, 0x18,             # +0x0C _sw    s0,local_8(sp)
-        0x3c, 0x02, 0x80, WILDCARD,         # +0x10 lui    v1,0x8006       <-- BSS start
-        0x24, 0x43, WILDCARD, WILDCARD,     # +0x14 addiu  v1,v1,0x7770
-        0x3c, 0x02, 0x80, WILDCARD,         # +0x18 lui    a0,0x800b       <-- BSS end
-        0x24, 0x44, WILDCARD, WILDCARD,     # +0x1C addiu  a0,a0,-0x2b28
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x10 lui    v0,0x8006       <-- BSS start
+        0x24, 0x43, WILDCARD, WILDCARD,     # +0x14 addiu  v1,v0,0x7770
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x18 lui    v0,0x800b       <-- BSS end
+        0x24, 0x44, WILDCARD, WILDCARD,     # +0x1C addiu  a0,v0,-0x2b28
     ]) \
     .const_op32_hi16("bss_start", 0x10) \
     .const_op32_lo16("bss_start", 0x14) \
@@ -711,7 +712,7 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     payload = rom.read_bytes(payload_rom_address, payload_size + 18)
     logger.info("Unpacking RNC payload...")
-    payload = rnc_unpack(payload)
+    payload = rnc_unpack(payload, skipping_input_checksum=True)
     if payload is None:
         logger.error("Error unpacking RNC-packed bootexe")
         return None
@@ -733,6 +734,183 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
 
+    builder = BffiBuilder()
+    builder.initial_tlb(tlb)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entrypoint)
+
+    magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
+    builder.fix(0x8000035c, magic_values, segment_id=0)
+    builder.fix(0x80000400, payload, segment_id=1)
+
+    builder.bss(bss_start, bss_end-bss_start)
+
+    return builder.build()
+
+
+# ------------------------------------------------------------------------------------------
+#
+# NFL Quarterback Club '99 / 2000
+#
+# Initialize magic values, intiialize TLB, clear memory from 0x80000000-0x80300040 with
+# BSS word 0xDEADBEEF, RNC decompress payload and run it.
+#
+# Once the game is up and running it will map more code into 0x00200000.
+#
+# ------------------------------------------------------------------------------------------
+
+NFLQBC99_ENTRY_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,             # +0x00 addiu sp,sp,-0x28
+        0xaf, 0xb0, 0x00, 0x18,             # +0x04 sw    s0,local_10(sp)
+        0x3c, 0x10, 0x80, 0x00,             # +0x08 lui   s0,0x8000
+        0x26, 0x10, 0x03, 0x1c,             # +0x0C addiu s0,s0,0x31c
+        0x3c, 0x02, 0x00, WILDCARD,         # +0x10 lui   v0,0x0
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x14 addiu v0,v0,0x1890
+        0xaf, 0xbf, 0x00, 0x20,             # +0x18 sw    ra,local_8(sp)
+        0xaf, 0xb1, 0x00, 0x1c,             # +0x1C sw    s1,local_c(sp)
+        0xae, 0x02, 0x00, 0x40,             # +0x20 sw    v0,0x40(s0)=>DAT_8000035c
+        0x3c, 0x02, 0x00, WILDCARD,         # +0x24 lui   v0,0x0
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x28 addiu v0,v0,0x3a70
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x2C jal   FUN_80300838    <-- sweep TLB
+        0xae, 0x02, 0x00, 0x44,             # +0x30 _sw   v0,0x44(s0)
+        0x24, 0x04, 0x00, 0x1f,             # +0x34 li    a0,0x1f
+        0x3c, 0x05, 0x00, 0x1f,             # +0x38 lui   a1,0x1f
+        0x34, 0xa5, 0xe0, 0x00,             # +0x3C ori   a1,a1,0xe000
+        0x00, 0x00, 0x30, 0x21,             # +0x40 clear a2
+        0x24, 0x07, 0xff, 0xff,             # +0x44 li    a3,-0x1
+        0x00, 0xe0, 0x10, 0x21,             # +0x48 move  v0,a3
+        0xaf, 0xa0, 0x00, 0x10,             # +0x4C sw    zero,local_18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x50 jal   FUN_80300718
+        0xaf, 0xa2, 0x00, 0x14,             # +0x54 _sw   v0,local_14(sp)
+        0x3c, 0x03, 0x80, 0x00,             # +0x58 lui   v1,0x8000
+        0x34, 0x63, 0x04, 0x00,             # +0x5C ori   v1,v1,0x400
+        0x3c, 0x02, 0x00, WILDCARD,         # +0x60 lui   v0,0xb2
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x64 addiu v0,v0,-0x337c
+        0xae, 0x02, 0x00, 0x48,             # +0x68 sw    v0,0x48(s0)=>DAT_80000364
+        0x3c, 0x02, 0x00, WILDCARD,         # +0x6C lui   v0,0xba
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x70 addiu v0,v0,-0x27f0
+        0xae, 0x02, 0x00, 0x4c,             # +0x74 sw    v0,0x4c(s0)=>DAT_80000368
+        0x3c, 0x02, 0x80, 0x30,             # +0x78 lui   v0,0x8030
+        0x24, 0x45, 0x00, 0x40,             # +0x7C addiu a1,v0,0x40
+        0x00, 0x65, 0x10, 0x2b,             # +0x80 sltu  v0,v1,a1
+        0x10, 0x40, 0x00, 0x07,             # +0x84 beq   v0,zero,LAB_803000e4
+        0x3c, 0x04, 0xde, 0xad,             # +0x88 _lui  a0,0xdead
+        0x34, 0x84, 0xbe, 0xef,             # +0x8C ori   a0,a0,0xbeef
+        0xac, 0x64, 0x00, 0x00,             # +0x90 sw    a0,0x0(v1)=>DAT_80000400
+        0x24, 0x63, 0x00, 0x04,             # +0x94 addiu v1,v1,0x4
+        0x00, 0x65, 0x10, 0x2b,             # +0x98 sltu  v0,v1,a1
+        0x54, 0x40, 0xff, 0xfd,             # +0x9C bnel  v0,zero,LAB_803000d4
+        0xac, 0x64, 0x00, 0x00,             # +0xA0 _sw   a0,0x0(v1)=>DAT_80000404
+        0x3c, 0x02, 0x00, WILDCARD,         # +0xA4 lui   v0,0xbe
+        0x24, 0x51, WILDCARD, WILDCARD,     # +0xA8 addiu s1,v0,0xdac
+    ]) \
+    .const_op32_hi16("data_35c", 0x10) \
+    .const_op32_lo16("data_35c", 0x14) \
+    .const_op32_hi16("data_360", 0x24) \
+    .const_op32_lo16("data_360", 0x28) \
+    .const_op32_hi16("data_364", 0x60) \
+    .const_op32_lo16("data_364", 0x64) \
+    .const_op32_hi16("data_368", 0x6C) \
+    .const_op32_lo16("data_368", 0x70) \
+    .const_op32_hi16("payload_rom_address", 0xA4) \
+    .const_op32_lo16("payload_rom_address", 0xA8) \
+    .build()
+
+def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    if NFLQBC99_ENTRY_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
+        return None
+    logger.info("found NFL Quarterback Club '99/2000 TLB mapper and RNC unpacker")
+
+
+    consts = NFLQBC99_ENTRY_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point()-ipc)
+
+    data_35c = consts["data_35c"].get_value() # start of filesystem table
+    data_360 = consts["data_360"].get_value() # end of filesystem table
+    data_364 = consts["data_364"].get_value()
+    data_368 = consts["data_368"].get_value()
+        
+    logger.info(\
+"""magic values table as follows:
+    0x8000035c = %08x
+    0x80000360 = %08x
+    0x80000364 = %08x
+    0x80000368 = %08x
+""",data_35c,data_360,data_364,data_368)
+    
+    payload_rom_address = consts["payload_rom_address"].get_value()
+    
+    payload_size = struct.unpack(">I", rom.read_bytes(payload_rom_address + 8, 4))[0]
+
+    logger.info("RNC-compressed main segment in ROM at 0x%08x (size %d bytes)", payload_rom_address, payload_size)
+
+    payload = rom.read_bytes(payload_rom_address, payload_size + 18)
+    logger.info("Unpacking RNC payload...")
+
+    # FIXME: CRC16 of input payload fails; are we bugged somehow?
+    payload = rnc_unpack(payload, skipping_input_checksum=True)
+    if payload is None:
+        logger.error("Error unpacking RNC-packed bootexe")
+        return None
+    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+
+    # with open("private/nflqbc99_payload.bin", "wb") as f:
+        # f.write(payload)
+
+    # QBC 2000 has Chef-style bss clear at the entry point.
+    # QBC 99 loads entry point to $a0 then jumps to it
+    # FIXME: remove 0x00100400 hardcodes
+    if NBAJAM2K_ENTRY_POINT_PATTERN.compare(payload):
+        logger.info("payload starts with jalr $a0/jr $a0 to entry point")
+        consts = NBAJAM2K_ENTRY_POINT_PATTERN.consts(0x00100400, payload, 0)
+        entrypoint = consts["entrypoint"].get_value()
+        logger.info("actual bootexe entry point at 0x%08x", entrypoint)
+
+        entrypoint_offset = entrypoint - 0x00100400
+        if ALLSTAR2K_REAL_ENTRY_POINT_PATTERN.compare(payload, entrypoint_offset) is False:
+            logger.error("expected Allstar 2000-style BSS clear, didn't get it")
+            raise RuntimeError("unimplemented A")
+        
+        bssconsts = ALLSTAR2K_REAL_ENTRY_POINT_PATTERN.consts(0x00100400, payload, entrypoint_offset)
+
+    elif CHEF_REAL_ENTRY_POINT_PATTERN.compare(payload):
+        logger.info("payload starts directly with BSS clear")
+        bssconsts = CHEF_REAL_ENTRY_POINT_PATTERN.consts(0x00100400, payload, 0)
+        entrypoint = 0x00100400
+    else:
+        logger.error("unrecognized data at payload entry point, giving up")
+        return None
+
+    bss_start = bssconsts["bss_start"].get_value()
+    bss_end = bssconsts["bss_end"].get_value()
+    
+    logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
+
+    # TODO: same as NBA Jam 2000, make common function for this
+    tlb = BffiTlb()
+    for i in range(0,0x1F):
+        entry = BffiTlbEntry()
+        entry.pagemask(0)
+        entry.entryhi(0x80000000)
+        entry.entrylo0(0)
+        entry.entrylo1(0)
+
+        tlb.entry(i, entry)
+    
+    entry1f = BffiTlbEntry()
+    entry1f.pagemask(0x1fe000)
+    entry1f.entryhi(0)
+    entry1f.entrylo0(1)
+    entry1f.entrylo1(0x1F)
+    tlb.entry(0x1F, entry1f)
+
+    # TODO: capture overlays, of which there are several.
+    # they load from the filesystem pointed at by data_35c/data_360.
+    # load offset TBD.
     builder = BffiBuilder()
     builder.initial_tlb(tlb)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())

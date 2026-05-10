@@ -27,7 +27,7 @@ from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
 from .slugfest import slugfest_unpack
 from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
-                    chef_unpack
+                    chef_unpack, nflqbc99_unpack
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
@@ -92,7 +92,6 @@ GAME_SPECIFIC_UNPACKERS = {
     # Tokisora Senshi Turok (J) [!] (actual name Jikuu Senshi Turok i.e. Turok 1 Japanese)
     "78cd7b8174f1e54bae8a77b1c1314a0a147752635b2c95668e34464fedcf4d2d": turok_unpack,
 
-
     # All-Star Baseball '99 (U) [!]
     "018f19f4174f4efd2c2bb7aabf92a9218436bdbbf2fd65085801d6c86a0a9516": allstar99_unpack,
 
@@ -119,6 +118,27 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # South Park - Chef's Luv Shack (E) [!]
     "808c16c10a8c60998b743f7ed96ec82363172dfeccc1035d2cbd527bdc9df6d0": chef_unpack,
+
+    # Jeremy McGrath Supercross 2000 (U) [!]
+    "bf5d67ce97052ee1b50928647d766eca388dbcfc69b1d7f4adeba7e8610f04e7": chef_unpack,
+
+    # Jeremy McGrath Supercross 2000 (E) [!]
+    "0aae47e4a9ae696f7bbd6446fc3b620cb1add70ea9d79a2d26f9693c5df0dd88": chef_unpack,
+
+    # NFL Quarterback Club 99 (U) [!]
+    "ddb39ce144e3aa308eae87763670aa8ae6546ca24fec5fde3e5c982c79409649": nflqbc99_unpack,
+
+    # NFL Quarterback Club 99 (E) [!]
+    "c8150c8b97af3871373e19fa9e2f43a266de6a500d55c96a1f9e9a3112565354": nflqbc99_unpack,
+
+    # NFL Quarterback Club 2000 (U) [!]
+    "35ac6193499247596bd0cce20cfe33fb69049e2b107d7ec6000896f52ed14d31": nflqbc99_unpack,
+
+    # NFL Quarterback Club 2000 (U) [!]
+    "a89fab662762377041fec54f2610b01fc06aaea417d3e03c38695bec428ed6b3": nflqbc99_unpack,
+
+    # NFL Quarterback Club 2001 (U) [!]
+    "39f24f4fafbf486684bfd9e79ebab44069cf94dcc51391a3886e5da502c27356": nflqbc99_unpack,
 
     # ------------------------------------------------------
     # 3DO / Sarge's Heroes games using a custom preamble
