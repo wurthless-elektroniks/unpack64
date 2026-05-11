@@ -164,6 +164,13 @@ def turok_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # offset in ROM is hardcoded into the unpack stub.
 # "Acclaim Entertainment, Inc." string follows preamble.
 #
+# Like the later games using the Acclaim filesystem, the bootloader drops some
+# arguments into reserved memory space:
+# - 0x80000380: filesystem start address
+# - 0x80000384: filesystem end address
+#
+# Then other overlays will be loaded from the filesystem.
+#
 # ------------------------------------------------------------------------------------------
 
 ALLSTAR99_BOOTENTRY_PATTERN = SignatureBuilder() \
@@ -185,10 +192,10 @@ ALLSTAR99_BOOTENTRY_PATTERN = SignatureBuilder() \
         0x00, 0x00, 0x00, 0x00,         # +0xD0 _nop
     ]) \
     .size(0xD4) \
-    .const_op32_hi16("payload_size_offset", 0x0C) \
-    .const_op32_lo16("payload_size_offset", 0x10) \
-    .const_op32_hi16("payload_offset", 0x1C) \
-    .const_op32_lo16("payload_offset", 0x20) \
+    .const_op32_hi16("fstable_address", 0x0C) \
+    .const_op32_lo16("fstable_address", 0x10) \
+    .const_op32_hi16("fsdata_address", 0x1C) \
+    .const_op32_lo16("fsdata_address", 0x20) \
     .const_op32_hi16("entry_point", 0xC4) \
     .const_op32_lo16("entry_point", 0xC8) \
     .build()
@@ -210,6 +217,23 @@ ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("bss_end", 0x1C) \
     .build()
 
+# TODO: same as NBA Jam 2000 - might be others to hunt down
+ALLSTAR99_OVERLAY_TABLE_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x00, 0x12, 0x80, 0x80,             # +0x00 sll        s0,s2,0x2
+        0x02, 0x12, 0x80, 0x21,             # +0x04 addu       s0,s0,s2
+        0x00, 0x10, 0x80, 0x80,             # +0x08 sll        s0,s0,0x2
+        0x3c, 0x01, 0x80, WILDCARD,         # +0x0C lui        at,0x8006
+        0x00, 0x30, 0x08, 0x21,             # +0x10 addu       at,at,s0
+        0x8c, 0x25, WILDCARD, WILDCARD,     # +0x14 lw         a1,offset PTR_s_ingame.bin_800642f4(at)
+        0x27, 0xa4, 0x00, 0x10,             # +0x18 addiu      a0,sp,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal        strcat                                                     undefined strcat()
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x0C) \
+    .const_op32_lo16("overlay_table_address", 0x14) \
+    .build()
+
+
 def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -224,27 +248,32 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("found Acclaim All-Star Baseball '99-style RNC unpacker")
 
     consts = ALLSTAR99_BOOTENTRY_PATTERN.consts(ipc, rom.boot_exe(), bootentry_offset)
-
-    payload_size_offset = consts["payload_size_offset"].get_value()
-    payload_offset = consts["payload_offset"].get_value()
+    fstable_address = consts["fstable_address"].get_value()
+    fsdata_address = consts["fsdata_address"].get_value()
     entry_point = consts["entry_point"].get_value()
 
-    payload_size = struct.unpack(">I",rom.read_bytes(payload_size_offset,4))[0]
+    logger.info("Dumping filesystem...")
+    filesystem = acclaimfs_read(rom,
+                                fstable_address,
+                                fsdata_address,
+                                align_nearest_word=True,
+                                skip_decompress=True)
 
-    logger.info("Compressed boot executable in ROM at 0x%08x (size %d/0x%08x bytes)",
-                payload_offset,
-                payload_size,
-                payload_size)
-    
-    payload = rom.read_bytes(payload_offset, payload_size)
+    if "CODE.BIN" not in filesystem:
+        logger.error("filesystem does not contain CODE.BIN, needed to boot game")
+        return None
+
+    logger.info("Loading main code segment from CODE.BIN")
+    payload = filesystem["CODE.BIN"]
 
     # FIXME: CRC16 fails for Allstar Baseball 99 (Europe)
-    logger.info("Unpacking RNC payload...")
-    payload = rnc_unpack(payload)
-    if payload is None:
-        logger.error("Error unpacking RNC-packed bootexe")
-        return None
-    logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+    if payload[:3] == b'RNC':
+        logger.info("Unpacking RNC payload...")
+        payload = rnc_unpack(payload, skipping_input_checksum=True)
+        if payload is None:
+            logger.error("Error unpacking RNC-packed bootexe")
+            return None
+        logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
 
     if payload[0] != 0x0C:
         logger.error("expected payload to start with a jal, but it didn't")
@@ -267,13 +296,61 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     bss_start = real_entry_point_consts["bss_start"].get_value()
     bss_end   = real_entry_point_consts["bss_end"].get_value()
 
-    logger.warning("this unpacker isn't quite complete yet, but i'll produce something for you anyway...")
-
     builder = BffiBuilder()
     builder.bss(bss_start, bss_end-bss_start)
+
+    builder.fix(0x80000380,
+                struct.pack(">II", fstable_address, fsdata_address),
+                segment_id=0)
     builder.fix(entry_point, payload, segment_id=1)
     builder.initial_program_counter(real_crt_startup_location)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
+
+    overlay_table_pattern_offset = ALLSTAR99_OVERLAY_TABLE_LOAD_PATTERN.find(payload)
+    if overlay_table_pattern_offset is None:
+        logger.error("can't find overlay table")
+        return None
+    
+    consts = ALLSTAR99_OVERLAY_TABLE_LOAD_PATTERN.consts(0x80000400, payload, overlay_table_pattern_offset)
+    overlay_table_address = consts["overlay_table_address"].get_value()
+    overlay_table_offset = overlay_table_address - entry_point
+    logger.info("overlay table is at 0x%08x", overlay_table_address)
+
+    while True:
+        if payload[overlay_table_offset] != 0x80:
+            break
+
+        overlay_filename_address, \
+        overlay_load_address, \
+        _, \
+        overlay_bss_address, \
+        overlay_bss_size = struct.unpack(">IIIII", payload[overlay_table_offset:overlay_table_offset+(5*4)])
+        
+        if (entry_point <= overlay_filename_address <= entry_point+len(payload)) is False:
+            break
+
+        overlay_filename_offset = overlay_filename_address - entry_point
+        overlay_filename = extract_cstring(payload[overlay_filename_offset:])
+
+        logger.info("overlay: %s -> RAM 0x%08x, bss 0x%08x-0x%08x",
+                    overlay_filename,
+                    overlay_load_address,
+                    overlay_bss_address,
+                    overlay_bss_address+overlay_bss_size)
+        
+        for filename, data in filesystem.items():
+            if filename.endswith(overlay_filename):
+                logger.info("...reading from: %s", filename)
+
+                if data[:3] == b'RNC':
+                    data = rnc_unpack(data, skipping_input_checksum=True)
+
+                builder.seg(overlay_load_address, data)
+
+                break
+
+        overlay_table_offset += (5*4)
+
     return builder.build()
 
 # ------------------------------------------------------------------------------------------
@@ -477,8 +554,7 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     if overlay_table_pattern_offset is None:
         logger.error("can't find overlay table")
         return None
-
-
+    
     consts = NBAJAM2K_OVERLAY_TABLE_LOAD_PATTERN.consts(0x80000400, payload, overlay_table_pattern_offset)
     overlay_table_address = consts["overlay_table_address"].get_value()
     overlay_table_offset = tlb.virtual_to_physical(overlay_table_address) - tlb.virtual_to_physical(0x80000400)
