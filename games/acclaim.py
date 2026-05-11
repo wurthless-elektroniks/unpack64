@@ -1,9 +1,15 @@
 '''
 Various Acclaim games that don't use the Iguana RNC unpacker
 but do need special cases added.
+
+Most of these games are built off the Turok 2 codebase and are Expansion Pak
+enhanced. They use the TLB, so a fixed 2 MB of code is mapped at all times,
+usually at 0x00200000. If the Expansion Pak is present, the game's main code
+overlay will be loaded in one shot to high memory and mapped to 0x00400000.
+If not, then the game will cache 4k chunks of code in RAM and use TLB miss
+exceptions to load new chunks in on demand, similar to how the Factor 5 games
+do it. 
 '''
-
-
 
 import logging
 
@@ -363,8 +369,8 @@ TUROK3_BSS_PRELUDE_PATTERN = SignatureBuilder() \
 # so it won't be repeated here
 
 # turok 3 uses 1 MB pages, and will load in oneshot to 0x80700000
-# if the expansion pak is detected. otherwise it probably loads
-# in chunks like the factor 5 and rare games do
+# if the expansion pak is detected. otherwise, it will swap in 4k
+# chunks and map them as appropriate, similar to the factor 5 and rare games
 TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN = SignatureBuilder() \
     .pattern([
         0x3c, 0x04, 0x80, WILDCARD,         # lui        a0,0x800d     <-- handle to something

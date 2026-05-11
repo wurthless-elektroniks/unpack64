@@ -3,13 +3,19 @@ Standard Iguana Entertainment / Acclaim Entertainment RNC unpacker
 
 Later versions are identifiable by the string "Acclaim Entertainment, Inc." in the bootexe.
 
-Examples:
-- Turok: Dinosaur Hunter
+The TLB games use variations on the same framework, which provides a filesystem, as well as the
+option of loading the main overlay in one shot (as on 8 MB systems) or in 4k chunks to be mapped
+in with the TLB.
 
-Examples that also use the TLB:
-- All-Star Baseball 2000 (uses same TLB init block as Re-Volt)
-- NBA Jam 2000 (integrates TLB init into the RNC unpacker stub)
+They will map 0x00100000 to the first 1 MB of RDRAM, decompress the boot executable,
+and then pass arguments to it in reserved memory space before running it. The main overlay
+then appears in memory at 0x002000000-0x003FFFFF.
 
+The arguments are as follows:
+- 0x8000035C: start of filesystem table
+- 0x80000360: end of filesystem table
+- 0x80000364: start of main overlay (NOT compressed)
+- 0x80000368: end of main overlay
 '''
 
 import logging
@@ -17,7 +23,7 @@ import struct
 
 from compression.rnc import rnc_unpack, crc16
 from preamble import identify_preamble
-from tlb import tlb_try_detect_preamble
+from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
@@ -357,6 +363,7 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("found NBA Jam 2000 TLB mapper and RNC unpacker")
 
     builder = BffiBuilder()
+    builder.required_memory_size(8)
 
     tlb = BffiTlb()
     for i in range(0,0x1F):
@@ -374,6 +381,14 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     entry1f.entrylo0(1)
     entry1f.entrylo1(0x1F)
     tlb.entry(0x1F, entry1f)
+
+    # same as the others
+    entry00 = BffiTlbEntry()
+    entry00.pagemask(0x1FE000)
+    entry00.entryhi(0x200000)
+    entry00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
+    entry00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb.entry(0, entry00)
 
     builder.initial_tlb(tlb)
 
@@ -407,17 +422,9 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("payload compressed size is %d byte(s)", payload_compressed_size)
     payload = rom.read_bytes(payload_rom_address, 18 + payload_compressed_size)
 
-    # HACK: NBA Jam 2000 (E) [!] has an invalid payload CRC16,
-    # so we recalculate it here so that check always passes
-    if rom.sha256() == "76778e298da9b3929c1659c2374d19df1d542fb2db89ff5be7d53c7dfa267fca":
-        logger.info("NBA Jam 2000 PAL detected, forcing RNC payload CRC recalc")
-        fixed_crc = crc16(payload, 18, payload_compressed_size)
-        logger.info("fixed CRC-16 is %04x", fixed_crc)
-        payload = bytearray(payload)
-        payload[14:16] = struct.pack(">H", fixed_crc)
-
+    # HACK: NBA Jam 2000 (E) [!] has an invalid payload CRC16
     logger.info("Unpacking RNC payload...")
-    payload = rnc_unpack(payload)
+    payload = rnc_unpack(payload, skipping_input_checksum=True)
     if payload is None:
         logger.error("Error unpacking RNC-packed bootexe")
         return None
@@ -454,6 +461,9 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
     builder.bss(bss_start, bss_end-bss_start)
+
+    main_segment = rom.read_bytes(data_364, data_368-data_364)
+    builder.fix(0x00200000, main_segment, segment_id=2)
 
     return builder.build()
 
@@ -558,6 +568,13 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     data_360 = consts["data_360"].get_value()
     data_364 = consts["data_364"].get_value()
     data_368 = consts["data_368"].get_value()
+    logger.info(\
+"""magic values table as follows:
+    0x8000035c = %08x
+    0x80000360 = %08x
+    0x80000364 = %08x
+    0x80000368 = %08x
+""",data_35c,data_360,data_364,data_368)
     
     payload_size = struct.unpack(">I", rom.read_bytes(data_35c, 4))[0]
     payload_rom_address = data_360
@@ -593,6 +610,15 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
 
+    logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
+    tlb_00 = BffiTlbEntry()
+    tlb_00.pagemask(0x1FE000)
+    tlb_00.entryhi(0x200000)
+    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb.entry(0, tlb_00)
+    main_overlay = rom.read_bytes(data_364, data_368-data_364)
+
     builder = BffiBuilder()
     builder.initial_tlb(tlb)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
@@ -601,6 +627,7 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
+    builder.fix(0x00200000, main_overlay, segment_id=2)
 
     builder.bss(bss_start, bss_end-bss_start)
 
@@ -691,10 +718,10 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     consts = CHEF_BOOT_PATTERN.consts(ipc, rom.boot_exe(), bootstub_entry_point_phys-ipc)
 
-    data_35c = consts["data_35c"].get_value()
-    data_360 = consts["data_360"].get_value()
-    data_364 = consts["data_364"].get_value()
-    data_368 = consts["data_368"].get_value()
+    data_35c = consts["data_35c"].get_value() # filesystem table start
+    data_360 = consts["data_360"].get_value() # filesystem table end
+    data_364 = consts["data_364"].get_value() # main overlay start
+    data_368 = consts["data_368"].get_value() # main overlay end
         
     logger.info(\
 """magic values table as follows:
@@ -734,7 +761,18 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
 
+    logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
+    tlb_00 = BffiTlbEntry()
+    tlb_00.pagemask(0x1FE000)
+    tlb_00.entryhi(0x200000)
+    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb.entry(0, tlb_00)
+
+    main_segment = rom.read_bytes(data_364, data_368-data_364)
+
     builder = BffiBuilder()
+    builder.required_memory_size(8)
     builder.initial_tlb(tlb)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
     builder.initial_program_counter(entrypoint)
@@ -742,6 +780,7 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
+    builder.fix(0x00200000, main_segment, segment_id=2)
 
     builder.bss(bss_start, bss_end-bss_start)
 
@@ -908,10 +947,22 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     entry1f.entrylo1(0x1F)
     tlb.entry(0x1F, entry1f)
 
+    # this is also the same as others
+    logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
+    tlb_00 = BffiTlbEntry()
+    tlb_00.pagemask(0x1FE000)
+    tlb_00.entryhi(0x200000)
+    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb.entry(0, tlb_00)
+
+    main_segment = rom.read_bytes(data_364, data_368-data_364)
+
     # TODO: capture overlays, of which there are several.
     # they load from the filesystem pointed at by data_35c/data_360.
     # load offset TBD.
     builder = BffiBuilder()
+    builder.required_memory_size(8)
     builder.initial_tlb(tlb)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
     builder.initial_program_counter(entrypoint)
@@ -919,6 +970,7 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
+    builder.fix(0x00200000, main_segment, segment_id=2)
 
     builder.bss(bss_start, bss_end-bss_start)
 

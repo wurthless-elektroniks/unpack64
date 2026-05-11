@@ -88,8 +88,9 @@ will set up the TLB to map chunks of RDRAM in a virtual memory space for reasons
 can't really imagine, because it carries a performance penalty on a console that was
 already famously hobbled by the slow RDRAM. While games like Perfect Dark probably
 had a valid use case (swapping various resources from RDRAM when the Expansion Pak is
-not installed), Acclaim and others used it for no apparent reason. I'm still scratching
-my head on that one.
+not installed), Acclaim and others used it for no apparent reason. ~~~I'm still scratching
+my head on that one.~~~ Turns out that, for Acclaim, it's a similar reason, and it's standard
+on all of their games that support the Expansion Pak.
 
 Even someone who can't understand all of that technobabble can guess that this all makes
 disassembling N64 games a real pain, to the point where half of the N64 romhacking
@@ -111,17 +112,30 @@ Dynamically loaded and relocatable code segments:
 - Zelda: Ocarina of Time
 - Zelda: Majora's Mask
 
-Using the TLB and a heap to treat the ROM as RAM and execute code from it:
+Using the TLB and a heap to cache chunks of program code in RAM to save memory:
 
+- Armorines: Project S.W.A.R.M.
 - Indiana Jones and the Infernal Machine (Factor 5)
 - Perfect Dark
 - Star Wars Episode 1: Battle for Naboo (Factor 5)
+- South Park
+- South Park: Chef's Luv Shack
+- Turok 2: Seeds of Evil
+- Turok 3: Shadow of Oblivion
 
 Serious boot executable abuse:
 
 - Excitebike 64: Boot executable displays the "N64 SPORTS" logo while it loads
   the main code (its own boot executable), then runs it. The "N64 SPORTS" logo
   code is completely unloaded afterwards.
+
+Expansion Pak games that don't officially support the Expansion Pak:
+- 1080 Snowboarding: Allocates extra heap space when extra memory is present.
+  Presumably allows for more resources to be loaded into memory so that they
+  don't have to be swapped out later.
+
+- South Park: Chef's Luv Shack: Uses Acclaim's contemporary framework and one-shot
+  loads overlays if the Expansion Pak is present. 
 
 ## License
 
