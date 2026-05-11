@@ -227,7 +227,9 @@ def _read_huffman(table: list, bitstream: _RncBitStream) -> int | None:
     logger.error("failed to find leaf! bits on buffer were %04x",bitstream.bits())
     return None
 
-def _unpack_type_1(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
+def _unpack_type_1(buffer: bytes,
+                   skipping_input_checksum: bool = False,
+                   skipping_output_checksum: bool = False) -> bytes | None:
     rnc_header = struct.unpack(">IIIHHH", buffer[0:18])
     magic = rnc_header[0]
     if magic != 0x524E4301:
@@ -302,10 +304,11 @@ def _unpack_type_1(buffer: bytes, skipping_input_checksum: bool = False) -> byte
                     out_buffer[out_buffer_pos] = out_buffer[out_buffer_pos - match_offset]
                     out_buffer_pos += 1
 
-    actual_uncompressed_crc16 = crc16(out_buffer, size=uncompressed_length)
-    if actual_uncompressed_crc16 != uncompressed_crc16:
-        logging.error("RNC decompressed CRC-16 mismatch: expected %04x, got %04x", uncompressed_crc16, actual_uncompressed_crc16)
-        return None
+    if skipping_output_checksum is False:
+        actual_uncompressed_crc16 = crc16(out_buffer, size=uncompressed_length)
+        if actual_uncompressed_crc16 != uncompressed_crc16:
+            logging.error("RNC decompressed CRC-16 mismatch: expected %04x, got %04x", uncompressed_crc16, actual_uncompressed_crc16)
+            return None
 
     return out_buffer
 
@@ -393,7 +396,9 @@ def _decode_distance_field(bitstream: _RncM2Bitstream):
 
     return base_distance
 
-def _unpack_type_2(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
+def _unpack_type_2(buffer: bytes,
+                   skipping_input_checksum: bool = False,
+                   skipping_output_checksum: bool = False) -> bytes | None:
     rnc_header = struct.unpack(">IIIHHH", buffer[0:18])
     magic = rnc_header[0]
     if magic != 0x524E4302:
@@ -482,12 +487,83 @@ def _unpack_type_2(buffer: bytes, skipping_input_checksum: bool = False) -> byte
                 output[output_pointer] = output[output_pointer-match_offset]
                 output_pointer += 1
 
-    actual_uncompressed_crc16 = crc16(output, size=uncompressed_length)
-    if actual_uncompressed_crc16 != uncompressed_crc16:
-        logging.error("RNC decompressed CRC-16 mismatch: expected %04x, got %04x", uncompressed_crc16, actual_uncompressed_crc16)
-        return None
+    if skipping_output_checksum is False:
+        actual_uncompressed_crc16 = crc16(output, size=uncompressed_length)
+        if actual_uncompressed_crc16 != uncompressed_crc16:
+            logging.error("RNC decompressed CRC-16 mismatch: expected %04x, got %04x", uncompressed_crc16, actual_uncompressed_crc16)
+            return None
 
     return output
+
+# ------------------------------------------------------------------------------------------------
+#
+# RNC, Acclaim variant 0x81
+#
+# This is a chunky version of RNC to allow quick seeking in a file, without having
+# to decompress the whole thing.
+#
+# ------------------------------------------------------------------------------------------------
+
+def _unpack_type_81(buffer: bytes, skipping_input_checksum: bool = False) -> bytes | None:
+    if buffer[:4] != b'RNC\x81':
+        logger.error("not Acclaim RNC-81")
+        return None
+
+    uncompressed_length, compressed_length = struct.unpack(">II", buffer[4:12])
+
+
+    # slightly different RNC header:
+    # +0x0C: (half << 1)  - number of chunks (when shifted, it's a sizeof)
+    # +0x0E: (byte << 10) - uncompressed chunk size
+    num_chunks = struct.unpack(">H", buffer[0xC:0xE])[0]
+    uncompressed_chunk_size = buffer[0x0E] << 10
+
+    header_read_pointer = 18
+    chunky_read_pointer = header_read_pointer + (num_chunks * 2)
+
+    uncompressed_bytes_left = uncompressed_length
+    compressed_bytes_left   = compressed_length
+
+    uncompressed = bytearray([])
+
+    for i in range(num_chunks):
+        compressed_chunk_size = struct.unpack(">H", buffer[header_read_pointer:header_read_pointer+2])[0]
+        header_read_pointer += 2
+
+        chunk = buffer[chunky_read_pointer:chunky_read_pointer+compressed_chunk_size]
+        chunky_read_pointer += compressed_chunk_size
+
+        # has to be even-byte aligned for some reason.
+        # failing to do this causes the decompressor to fail
+        if (chunky_read_pointer & 1):
+            chunky_read_pointer += 1
+
+        uncompressed_size = min(uncompressed_chunk_size, uncompressed_bytes_left)
+ 
+        fake_rnc = bytearray([])
+        fake_rnc += b'RNC\x01'
+        fake_rnc += struct.pack(">IIHHH", uncompressed_size, compressed_chunk_size, 0x0000, 0x0000, 0x0000)
+        fake_rnc += chunk
+
+        uncompressed_chunk = _unpack_type_1(fake_rnc, skipping_input_checksum=True, skipping_output_checksum=True)
+        if uncompressed_chunk is None:
+            logger.error("DECOMPRESS FAIL! chunk %02x", i)
+            return None
+            
+        uncompressed += uncompressed_chunk
+
+        uncompressed_bytes_left -= uncompressed_size
+        compressed_bytes_left -= compressed_chunk_size
+
+        if uncompressed_bytes_left < 0:
+            raise RuntimeError("uncompressed bytes left went negative!")
+        if compressed_bytes_left < 0:
+            raise RuntimeError("compressed bytes left went negative!")
+
+    return uncompressed
+
+# ------------------------------------------------------------------------------------------------
+
 
 def rnc_unpack(buffer: bytes, skipping_input_checksum: bool = False)  -> bytes | None:
     if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x01:
@@ -495,5 +571,8 @@ def rnc_unpack(buffer: bytes, skipping_input_checksum: bool = False)  -> bytes |
 
     if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x02:
         return _unpack_type_2(buffer, skipping_input_checksum=skipping_input_checksum)
+
+    if buffer[0] == 0x52 and buffer[1] == 0x4E and buffer[2] == 0x43 and buffer[3] == 0x81:
+        return _unpack_type_81(buffer, skipping_input_checksum=skipping_input_checksum)
 
     return None

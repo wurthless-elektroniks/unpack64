@@ -71,7 +71,7 @@ def _ident_preamble_common(rom: N64Rom,
 # clears TLB entries 0x00-0x1E and then initializes entry 0x1F
 # before calling the remapped entry point
 #
-# function takes the following arguments
+# the TLB mapping function (looks like osMapTLB from libultra) takes the following arguments
 # - a0       = Index, which should be 0x1F
 # - a1       = PageMask
 # - a2       = EntryHi

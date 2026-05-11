@@ -21,12 +21,15 @@ The arguments are as follows:
 import logging
 import struct
 
+from .acclaimfs import acclaimfs_read
+
 from compression.rnc import rnc_unpack, crc16
 from preamble import identify_preamble
 from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
+from strutil import extract_cstring
 from mips import disassemble_jump_imm26_target
 
 logger = logging.getLogger(__name__)
@@ -277,9 +280,16 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
 #
 # NBA Jam 2000
 #
-# Boot stub starts by writing some magic values somewhere.
-# Then it initializes TLB by unmapping entries 0x00~0x1E, then maps page 0x1F.
-# The main payload is decompressed to low RAM and is executed.
+# In addition to RNC decompressing the bootexe and TLB mapping the main overlay,
+# this game will read more overlays from its filesystem.
+# The good news is that they are all statically mapped.
+#
+# For NBA Jam 2000 (U), the overlays are in a table at 0x800642f4:
+# - 4 bytes pointer to ASCII filename (sans directory prefix) of the overlay
+# - 4 bytes load address
+# - 4 bytes something
+# - 4 bytes BSS start
+# - 4 bytes BSS size
 #
 # ------------------------------------------------------------------------------------------
 
@@ -351,7 +361,22 @@ NBAJAM2K_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("entrypoint", 4) \
     .build()
 
+NBAJAM2K_OVERLAY_TABLE_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x00, 0x12, 0x80, 0x80,             # +0x00 sll        s0,s2,0x2
+        0x02, 0x12, 0x80, 0x21,             # +0x04 addu       s0,s0,s2
+        0x00, 0x10, 0x80, 0x80,             # +0x08 sll        s0,s0,0x2
+        0x3c, 0x01, 0x80, WILDCARD,         # +0x0C lui        at,0x8006
+        0x00, 0x30, 0x08, 0x21,             # +0x10 addu       at,at,s0
+        0x8c, 0x25, WILDCARD, WILDCARD,     # +0x14 lw         a1,offset PTR_s_ingame.bin_800642f4(at)
+        0x27, 0xa4, 0x00, 0x10,             # +0x18 addiu      a0,sp,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal        strcat                                                     undefined strcat()
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x0C) \
+    .const_op32_lo16("overlay_table_address", 0x14) \
+    .build()
 
+# TODO: absolute dogshit code, really has to be cleaned up/refactored
 def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -412,6 +437,13 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
 
+    logger.info("Dumping contents of filesystem...")
+    filesystem = acclaimfs_read(rom,
+                                data_35c,
+                                data_360,
+                                align_nearest_word=True,
+                                skip_decompress=True)
+
     logger.info("RNC payload in ROM at 0x%08x, checking it.", payload_rom_address)
     if rom.read_bytes(payload_rom_address, 4) != b'RNC\x01':
         logger.error("payload does not use RNC type 1 compression")
@@ -441,8 +473,52 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     logger.info("real executable entry point is 0x%08x", entrypoint)
 
+    overlay_table_pattern_offset = NBAJAM2K_OVERLAY_TABLE_LOAD_PATTERN.find(payload)
+    if overlay_table_pattern_offset is None:
+        logger.error("can't find overlay table")
+        return None
+
+
+    consts = NBAJAM2K_OVERLAY_TABLE_LOAD_PATTERN.consts(0x80000400, payload, overlay_table_pattern_offset)
+    overlay_table_address = consts["overlay_table_address"].get_value()
+    overlay_table_offset = tlb.virtual_to_physical(overlay_table_address) - tlb.virtual_to_physical(0x80000400)
+    logger.info("overlay table is at 0x%08x", overlay_table_address)
+
+    while True:
+        overlay_filename_address, \
+        overlay_load_address, \
+        _, \
+        overlay_bss_address, \
+        overlay_bss_size = struct.unpack(">IIIII", payload[overlay_table_offset:overlay_table_offset+(5*4)])
+        
+        if tlb.virtual_to_physical(overlay_filename_address) is None:
+            break
+
+        overlay_filename_offset = tlb.virtual_to_physical(overlay_filename_address) - tlb.virtual_to_physical(0x80000400)
+        overlay_filename = extract_cstring(payload[overlay_filename_offset:])
+
+        logger.info("overlay: %s -> RAM 0x%08x, bss 0x%08x-0x%08x",
+                    overlay_filename,
+                    overlay_load_address,
+                    overlay_bss_address,
+                    overlay_bss_address+overlay_bss_size)
+        
+        for filename, data in filesystem.items():
+            if filename.endswith(overlay_filename):
+                logger.info("...reading from: %s", filename)
+
+                if data[:3] == b'RNC':
+                    data = rnc_unpack(data, skipping_input_checksum=True)
+
+                builder.seg(overlay_load_address, data)
+
+                break
+
+        overlay_table_offset += (5*4)
+
     # TODO: kill hardcoding here
     builder.fix(0x80000400, payload, segment_id=1)
+
 
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
     builder.initial_program_counter(entrypoint)

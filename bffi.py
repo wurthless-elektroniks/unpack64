@@ -396,7 +396,7 @@ class BffiTlb(object):
             if tlb_entry.is_valid() is False:
                 continue
 
-            logger.debug("TLB entry 0x%02x valid, checking it", i)
+            # logger.debug("TLB entry 0x%02x valid, checking it", i)
             
             if tlb_entry.is_global() is False and \
                 tlb_entry.asid() != current_asid:
@@ -413,18 +413,18 @@ class BffiTlb(object):
             virtual_page_number = tlb_entry.entryhi() & ~mask
             address_masked      = address & ~mask
 
-            logger.debug("page size %08x, mask %08x, vpn %08x", page_size, mask, virtual_page_number)
+            # logger.debug("page size %08x, mask %08x, vpn %08x", page_size, mask, virtual_page_number)
             if address_masked != virtual_page_number:
-                logger.debug("...miss")
+                # logger.debug("...miss")
                 continue
 
 
             even_odd_pagemask = PAGE_SIZE_LUT[tlb_entry.pagemask()]
             
             entrylo = tlb_entry.entrylo0() if (address & even_odd_pagemask) == 0 else tlb_entry.entrylo1()
-            logger.debug("entrylo was: %08x", entrylo)
+            # logger.debug("entrylo was: %08x", entrylo)
             if _entrylo_valid(entrylo) is False:
-                logger.debug("...ended up in an unmapped page.")
+                # logger.debug("...ended up in an unmapped page.")
                 continue
 
             return (self._entries[i], entrylo)
