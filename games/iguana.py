@@ -3,19 +3,37 @@ Standard Iguana Entertainment / Acclaim Entertainment RNC unpacker
 
 Later versions are identifiable by the string "Acclaim Entertainment, Inc." in the bootexe.
 
-The TLB games use variations on the same framework, which provides a filesystem, as well as the
-option of loading the main overlay in one shot (as on 8 MB systems) or in 4k chunks to be mapped
-in with the TLB.
+Urgent note to sane people re: the TLB games: the setup these games use
+is annoying to deal with. It needs an explainer, so here goes...
 
-They will map 0x00100000 to the first 1 MB of RDRAM, decompress the boot executable,
-and then pass arguments to it in reserved memory space before running it. The main overlay
-then appears in memory at 0x002000000-0x003FFFFF.
+The TLB games use variations on the same framework, which provides a bootloader, a TLB virtual
+memory setup, a "main" (or "OS") section, and two "swap" sections. On 8 MB systems there is the
+option to load the swap sections in one shot at boot time for a performance boost; on 4 MB systems
+they'll be loaded and mapped in 4k chunks.
+
+The bootloader maps 0x00100000 to the first 1 MB of RDRAM, decompresses the "main" section,
+puts arguments in reserved memory space, then runs it.
 
 The arguments are as follows:
 - 0x8000035C: start of filesystem table
 - 0x80000360: end of filesystem table
-- 0x80000364: start of main overlay (NOT compressed)
-- 0x80000368: end of main overlay
+- 0x80000364: start of "fast swap" section ("swapfile.bin")
+- 0x80000368: end of "fast swap" section, start of "slow swap" section ("slowswap.bin")
+
+The fast swap is simply uncompressed code and data, the slow swap is compressed in the
+chunky RNC-81 variant.
+
+The basic memory map during runtime is:
+
+- 0x00100000 is the boot executable we unpacked at startup
+- 0x00200000 is the "fast swap" section
+- 0x00300000 is the "slow swap" section
+
+So that's three main code blobs, on top of whatever overlays the game wants to load in.
+Yeesh! You'd think they'd use something simpler than that, but nope, that is what they
+chose to use for a selection of games with middling Metacritic reception, and it's a pain
+to reverse engineer. Best of luck to whoever targets those for decomp projects...
+
 '''
 
 import logging
@@ -23,16 +41,40 @@ import struct
 
 from .acclaimfs import acclaimfs_read
 
-from compression.rnc import rnc_unpack, crc16
+from compression.rnc import rnc_unpack, rnc_get_filesize_from_header
 from preamble import identify_preamble
 from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
 from n64rom import N64Rom
-from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
+from bffi import Bffi, BffiBuilder, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
 from strutil import extract_cstring
 from mips import disassemble_jump_imm26_target
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_swap(rom: N64Rom,
+                  fast_swap_rom_address: int,
+                  slow_swap_rom_address: int,
+                  builder: BffiBuilder):
+
+    fast_swap = rom.read_bytes(fast_swap_rom_address, slow_swap_rom_address-fast_swap_rom_address)
+
+    slow_swap_header = rom.read_bytes(slow_swap_rom_address, 18)
+    if slow_swap_header[0:4] != b'RNC\x81':
+        raise RuntimeError(f"didn't get RNC-81 header at slow swap address! got {slow_swap_header}")
+
+    filesize = rnc_get_filesize_from_header(slow_swap_header)
+    if filesize is None:
+        raise RuntimeError("parse error somewhere")
+
+    slow_swap = rom.read_bytes(slow_swap_rom_address, filesize)
+    logger.info("unpacking slow swap...")
+
+    slow_swap = rnc_unpack(slow_swap, skipping_input_checksum=True)
+
+    builder.fix(0x00200000, fast_swap, segment_id=8)
+    builder.fix(0x00300000, slow_swap, segment_id=9)
 
 # ------------------------------------------------------------------------------------------
 #
@@ -614,8 +656,8 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("BSS section at 0x%08x~0x%08x", bss_start, bss_end)
     builder.bss(bss_start, bss_end-bss_start)
 
-    main_segment = rom.read_bytes(data_364, data_368-data_364)
-    builder.fix(0x00200000, main_segment, segment_id=2)
+    _extract_swap(rom, data_364, data_368, builder)
+
 
     return builder.build()
 
@@ -769,7 +811,6 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
     tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
-    main_overlay = rom.read_bytes(data_364, data_368-data_364)
 
     builder = BffiBuilder()
     builder.initial_tlb(tlb)
@@ -779,18 +820,28 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
-    builder.fix(0x00200000, main_overlay, segment_id=2)
+    _extract_swap(rom, data_364, data_368, builder)
 
     builder.bss(bss_start, bss_end-bss_start)
+
+    # TODO: it doesn't look like the .bin files in the filesystem are code.
+    # i can't find the code overlay loader, but i did find the overlay loader
+    # table at 0x0012A53C (US ver). the "code" sections don't seem to contain
+    # any code at all, and they load where there's already executable code
+    # in the payload. until i find the overlay loader, that's all i can do here.
 
     return builder.build()
 
 # ------------------------------------------------------------------------------------------
 #
 # South Park - Chef's Luv Shack
+# Jeremy McGrath Supercross 2000
 #
 # Another variant on NBA Jam 2000, but it sets the audio sample rate to 22050 Hz
 # in the init stub just to be a dick.
+#
+# Neither of these games appear to load more code overlays from the filesystem,
+# but if they do, I guess I'll have to add them...
 #
 # ------------------------------------------------------------------------------------------
 
@@ -921,8 +972,6 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
     tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
 
-    main_segment = rom.read_bytes(data_364, data_368-data_364)
-
     builder = BffiBuilder()
     builder.required_memory_size(8)
     builder.initial_tlb(tlb)
@@ -932,7 +981,8 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
-    builder.fix(0x00200000, main_segment, segment_id=2)
+
+    _extract_swap(rom, data_364, data_368, builder)
 
     builder.bss(bss_start, bss_end-bss_start)
 
@@ -944,9 +994,7 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # NFL Quarterback Club '99 / 2000
 #
 # Initialize magic values, intiialize TLB, clear memory from 0x80000000-0x80300040 with
-# BSS word 0xDEADBEEF, RNC decompress payload and run it.
-#
-# Once the game is up and running it will map more code into 0x00200000.
+# BSS word 0xDEADBEEF, RNC decompress payload and run it. Uses fast swap/slow swap scheme.
 #
 # ------------------------------------------------------------------------------------------
 
@@ -1007,6 +1055,7 @@ NFLQBC99_ENTRY_PATTERN = SignatureBuilder() \
     .const_op32_hi16("payload_rom_address", 0xA4) \
     .const_op32_lo16("payload_rom_address", 0xA8) \
     .build()
+
 
 def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -1108,8 +1157,6 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
 
-    main_segment = rom.read_bytes(data_364, data_368-data_364)
-
     # TODO: capture overlays, of which there are several.
     # they load from the filesystem pointed at by data_35c/data_360.
     # load offset TBD.
@@ -1122,8 +1169,13 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     magic_values = struct.pack(">IIII", data_35c, data_360, data_364, data_368)
     builder.fix(0x8000035c, magic_values, segment_id=0)
     builder.fix(0x80000400, payload, segment_id=1)
-    builder.fix(0x00200000, main_segment, segment_id=2)
+
+    _extract_swap(rom, data_364, data_368, builder)
 
     builder.bss(bss_start, bss_end-bss_start)
+
+    # TODO: more overlays? not sure. it's a similar situation to
+    # allstar 2000, where the loader code isn't easy to find, and the
+    # .bin files don't seem to contain any real code.
 
     return builder.build()

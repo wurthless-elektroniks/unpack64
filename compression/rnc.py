@@ -576,3 +576,16 @@ def rnc_unpack(buffer: bytes, skipping_input_checksum: bool = False)  -> bytes |
         return _unpack_type_81(buffer, skipping_input_checksum=skipping_input_checksum)
 
     return None
+
+
+def rnc_get_filesize_from_header(header: bytes) -> bytes:
+    if header[:3] != b'RNC':
+        return None
+    
+    compressed_length = struct.unpack(">I", header[8:12])[0]
+
+    if (header[3] & 0x80) == 0:
+        return compressed_length + 18
+    
+    num_chunks = struct.unpack(">H", header[0xC:0xE])[0]
+    return compressed_length + (num_chunks * 2) + 18
