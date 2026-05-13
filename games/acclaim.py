@@ -502,4 +502,137 @@ def turok3_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.bss(bss_start, bss_end-bss_start)
 
     return builder.build()
+
+# ----------------------------------------------------------------------
+#
+# Re-Volt
+# Another TLB game
+#
+# Preamble BSS range is wrong; actual range is cleared at the entry point.
+#
+# This game does not use the fast/slow swap nonsense that the Iguana
+# games do, instead it prefers just using a single fast swap section
+# that it maps to 0x00200000. If 8 MB present, it loads it in from ROM
+# to 0x80600000 and sets up the TLB to point to it.
+#
+# Game resources are stored in an ultra-chunky RNC-81 archive which spans
+# most of the ROM. It doesn't look like there's any code in there.
+#
+# ----------------------------------------------------------------------
+
+REVOLT_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,              # +0x00 addiu      sp,sp,-0x28
+        0xaf, 0xb1, 0x00, 0x1c,              # +0x04 sw         s1,local_c(sp)
+        0x00, 0x80, 0x88, 0x21,              # +0x08 move       s1,a0
+        0x24, 0x04, 0x56, 0x22,              # +0x0C li         a0,0x5622
+        0xaf, 0xbf, 0x00, 0x20,              # +0x10 sw         ra,local_8(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # +0x14 jal        FUN_0013a338     boring sample rate init
+        0xaf, 0xb0, 0x00, 0x18,              # +0x18 _sw        s0,local_10(sp)
+        0x3c, 0x02, 0x00, WILDCARD,          # +0x1C lui        v0,0xd           <-- BSS size in bytes
+        0x24, 0x42, WILDCARD, WILDCARD,      # +0x20 addiu      v0,v0,-0x7c4d
+        0x00, 0x02, 0x20, 0x82,              # +0x24 srl        a0,v0,0x2
+        0x3c, 0x02, 0x00, WILDCARD,          # +0x28 lui        v0,0x6           <-- BSS start (physical)
+        0x24, 0x42, WILDCARD, WILDCARD,      # +0x2C addiu      v0,v0,-0x3e50
+        0x3c, 0x03, 0x80, 0x00,              # +0x30 lui        v1,0x8000
+        0x08, WILDCARD, WILDCARD, WILDCARD,  # +0x34 j          LAB_00106118
+        0x00, 0x43, 0x18, 0x25,              # +0x38 _or        v1,v0,v1         <-- kseg-ify the pointer
+    ]) \
+    .const_op32_hi16("bss_size", 0x1C) \
+    .const_op32_lo16("bss_size", 0x20) \
+    .const_op32_hi16("bss_start", 0x28) \
+    .const_op32_lo16("bss_start", 0x2C) \
+    .build()
+
+REVOLT_MAIN_SWAP_INIT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x03, 0x00, 0x5f,         # +0x00 lui   v1,0x5f       if total memory less than 6 MB,
+        0x34, 0x63, 0xff, 0xff,         # +0x04 ori   v1,v1,0xffff  assume no expansion pak
+        0x24, 0x02, 0x02, 0x00,         # +0x08 li    v0,0x200
+        0xa6, 0x02, WILDCARD, WILDCARD, # +0x0C sh    v0,0x141c(s0)
+        0x3c, 0x02, 0xb0, WILDCARD,     # +0x10 lui   v0,0xb006      <-- ROM start address
+        0x24, 0x45, WILDCARD, WILDCARD, # +0x14 addiu a1,v0,-0x2000
+        0x3c, 0x02, 0xb0, WILDCARD,     # +0x18 lui   v0,0xb00c      <-- ROM end address
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x1C addiu v0,v0,0x7f80
+        0x00, 0x45, 0x10, 0x23,         # +0x20 subu  v0,v0,a1
+        0x24, 0x42, 0xff, 0xff,         # +0x24 addiu v0,v0,-0x1
+        0x00, 0x02, 0x13, 0x02,         # +0x28 srl   v0,v0,0xc
+        0xa6, 0x02, WILDCARD, WILDCARD, # +0x2C sh    v0,0x141e(s0)
+        0x3c, 0x02, 0x80, 0x00,         # +0x30 lui   v0,0x8000
+        0x8c, 0x44, 0x03, 0x18,         # +0x34 lw    a0,0x0318(v0)  read osMemSize for memory check
+    ]) \
+    .const_op32_hi16("mainswap_rom_start", 0x10) \
+    .const_op32_lo16("mainswap_rom_start", 0x14) \
+    .const_op32_hi16("mainswap_rom_end", 0x18) \
+    .const_op32_lo16("mainswap_rom_end", 0x1C) \
+    .build()
+
+def revolt_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
     
+    entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point())
+    if entry_point_phys is None:
+        logger.error("entry point in unmapped TLB space!!")
+        return None
+    entry_point_phys += 0x80000000
+
+    bootexe = rom.boot_exe()
+
+    if REVOLT_ENTRY_POINT_PATTERN.compare(bootexe, entry_point_phys-ipc) is False:
+        return None
+    
+    logger.info("found Re-Volt entry point")
+
+    consts = REVOLT_ENTRY_POINT_PATTERN.consts(ipc, bootexe, entry_point_phys-ipc)
+
+    bss_start = consts["bss_start"].get_value() + 0x80000000
+    bss_size  = consts["bss_size"].get_value()
+
+    logger.info("BSS: 0x%08x-0x%08x",
+                bss_start,
+                bss_start+bss_size)
+    
+    bootexe = bootexe[:bss_start-ipc]
+
+    main_swap_init_offset = REVOLT_MAIN_SWAP_INIT_PATTERN.find(bootexe)
+    if main_swap_init_offset is None:
+        logger.error("can't find main swap init code")
+        return None
+    
+    consts = REVOLT_MAIN_SWAP_INIT_PATTERN.consts(ipc, bootexe, main_swap_init_offset)
+
+    mainswap_rom_start = consts["mainswap_rom_start"].get_value() & 0x03FFFFFF
+    mainswap_rom_end   = consts["mainswap_rom_end"].get_value() & 0x03FFFFFF
+
+    # game rounds actual load size down to nearest 4k chunk
+    # (that's what that srl opcode above was doing)
+    mainswap_logical_size = (mainswap_rom_end-mainswap_rom_start) & (~((1 << 0x0C) - 1))
+    mainswap_rom_end = mainswap_rom_start + mainswap_logical_size
+
+    logger.info("main swap segment is in ROM at 0x%08x-0x%08x (%d byte(s))",
+                mainswap_rom_start,
+                mainswap_rom_end,
+                mainswap_logical_size)
+    
+    swap = rom.read_bytes(mainswap_rom_start, mainswap_logical_size)
+    
+    # TODO: verify that TLB is as expected
+    entry00 = BffiTlbEntry()
+    entry00.pagemask(0x1fe000)
+    entry00.entryhi(0x00200000)
+    entry00.entrylo0( tlb_pack_entrylo(0x00600000, 0x1F) )
+    entry00.entrylo1(1)
+    tlb.entry(0, entry00)
+
+    builder = BffiBuilder()
+    builder.required_memory_size(8)
+    builder.initial_tlb(tlb)
+    builder.bss(bss_start, bss_size)
+    builder.fix(ipc, bootexe)
+    builder.fix(0x00200000, swap)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    return builder.build()

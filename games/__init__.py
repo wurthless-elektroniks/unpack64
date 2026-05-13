@@ -2,7 +2,7 @@
 Game-specific unpacker drivers.
 '''
 
-from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack
+from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
@@ -766,15 +766,11 @@ GAME_SPECIFIC_UNPACKERS = {
     # Turok 3 - Shadow of Oblivion (E) [!]
     "26520b99cbadf6a2f095ec94d898907901a9541703c34976f5f8c926bc90b706": turok3_unpack,
 
-    # ------------------------------------------------------
-    # Games using standard TLB but nothing else that's fancy
-    # ------------------------------------------------------
-
     # Re-Volt (U) [!]
-    #"826fd84fb778f6ddaa8bc14cbf116fb25bf1bf6ed4b833d7e30501be6f144823": tlb_try_detect_singleton,
-    
-    # Turok 2 (testing only)
-    #"a182ff273697bd337c17be427041a1dee6dec0f90d7d62407843c5eabb7e6ef0": tlb_try_detect_singleton,
+    "826fd84fb778f6ddaa8bc14cbf116fb25bf1bf6ed4b833d7e30501be6f144823": revolt_unpack,
+
+    # Re-Volt (E) (M4) [!]
+    "ce619ae064bc608d9a139f95e6bbc9f17fe3898d242943bc92fd0d6fc74915b0": revolt_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
