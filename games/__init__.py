@@ -16,6 +16,8 @@ from .factor5 import rogue_us_unpack, rogue_jp_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
+from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
+                    chef_unpack, nflqbc99_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
@@ -25,18 +27,20 @@ from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
 from .sarge  import sarge_unpack
+from .seta import shshogi_unpack
 from .slugfest import slugfest_unpack
-from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
-                    chef_unpack, nflqbc99_unpack
+from .titus import superman_unpack
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
 from .zelda import dobutsu_unpack
 
-
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
-# ROM filenames are from an ancient goodn64 set, except where noted
+# ROM filenames are from an ancient goodn64 set, except where noted.
+#
+# Any game that does not need to be unpacked (i.e., is a single-load game)
+# should be blacklisted by setting its unpacker to None
 GAME_SPECIFIC_UNPACKERS = {
 
     # ------------------------------------------------------
@@ -773,6 +777,23 @@ GAME_SPECIFIC_UNPACKERS = {
     "ce619ae064bc608d9a139f95e6bbc9f17fe3898d242943bc92fd0d6fc74915b0": revolt_unpack,
 
     # ------------------------------------------------------
+    # Seta
+    # ------------------------------------------------------
+
+    # Saikyou Habu Shougi (J) [!]
+    "1d81949eda06331501f807296aaa3b775ccf4fea12a57b1575641579a7b299ab": shshogi_unpack,
+
+    # ------------------------------------------------------
+    # Titus
+    # ------------------------------------------------------
+
+    # Superman (U) (M3) [!]
+    "37df2542bf24951e259990c4d76c13f96dd52cba867f492b3a99391d0978b178": superman_unpack,
+
+    # Superman (E) (M6) [!]
+    "ae0cb81d7fff296f4a079e3ec08255ea9d65979230bb41ab4ae492bf830d56a0": superman_unpack,
+
+    # ------------------------------------------------------
     # Confirmed single-load games
     #
     # Any game that does not need to be unpacked should be blacklisted
@@ -781,5 +802,4 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Jinsei Game 64 (J) [!] - appears to be single-load
     # "bfa3cbe991967318eecabac89883427ec29cf071373e97751dccc99cd7efe70d": None,
-
 }
