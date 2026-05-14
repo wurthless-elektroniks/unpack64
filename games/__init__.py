@@ -793,6 +793,23 @@ GAME_SPECIFIC_UNPACKERS = {
     # Superman (E) (M6) [!]
     "ae0cb81d7fff296f4a079e3ec08255ea9d65979230bb41ab4ae492bf830d56a0": superman_unpack,
 
+    # Roadsters Trophy (U) (M3) [!]
+    "49c4494ce6acca523c7066b0bdf598ff466a9b5a91cb2ff85730a7079c1911fd": superman_unpack,    
+
+    # Roadsters Trophy (E) (M6) [!]
+    "ba3307883fe81ddeb81ed6a51cb1d4cd9d3353c73ca9007c02212c777b572e2e": superman_unpack,    
+
+    # Automobili Lamborghini (U) [!]
+    "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c": superman_unpack,
+
+    # Automobili Lamborghini (E) [!]
+    "740a878157b15c0cd65e2623dea3ab9c90b6984ad709d8543b7e50f33e88fc62": superman_unpack,
+
+    # Super Speed Race 64 (J) [o1]
+    "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1": superman_unpack,
+
+    # Virtual Chess 64 might be single-load
+
     # ------------------------------------------------------
     # Confirmed single-load games
     #

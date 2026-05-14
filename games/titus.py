@@ -7,6 +7,9 @@ Games that should be in here:
 - Superman
 - Virtual Chess 64
 
+Titus games also compress code/data; compressed blocks usually contain the magic word 0x9D89646C.
+Roadsters obviously compresses code within these sections (searching for 27 FB xx xx AF BF xx xx
+turns up hits). The decompressor is another piece of assembler spaghetti so it's a do-later.
 '''
 
 import logging
@@ -17,6 +20,7 @@ from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from reloc import demunge_mips_hilo_offset
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,48 @@ SUPERMAN_READ_CART_PATTERN = SignatureBuilder() \
         0x3c, 0x0f, 0x80, WILDCARD,      # lui        t7,0x800d
         0x85, 0xef, WILDCARD, WILDCARD,  # lh         t7,offset DAT_800d60d0(t7)
         0x15, 0xe0, 0x00, 0x18,          # bne        t7,zero,LAB_80001054
+    ]) \
+    .build()
+
+# this readcart function is a bit different,
+# but it's the same method signature and same arguments
+ROADSTERS_READ_CART_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,     #addiu      sp,sp,-0x28
+        0xaf, 0xbf, 0x00, 0x24,     #sw         ra,local_4(sp)
+        0xaf, 0xa4, 0x00, 0x28,     #sw         a0,local_res0(sp)
+        0xaf, 0xa5, 0x00, 0x2c,     #sw         a1,local_res4(sp)
+        0xaf, 0xa6, 0x00, 0x30,     #sw         a2,local_res8(sp)
+        0x8f, 0xa4, 0x00, 0x2c,     #lw         a0,local_res4(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD,     #jal        FUN_8005c020
+        0x8f, 0xa5, 0x00, 0x30,     #_lw        a1,local_res8(sp)
+        0x8f, 0xae, 0x00, 0x30,     #lw         t6,local_res8(sp)
+        0x3c, 0x01, 0x00, 0x01,     #lui        at,0x1
+        0x34, 0x21, 0x40, 0x01,     #ori        at,at,0x4001
+        0x01, 0xc1, 0x08, 0x2b,     #sltu       at,t6,at
+        0x14, 0x20, 0x00, 0x29,     #bne        at,zero,LAB_8004da08
+        0x00, 0x00, 0x00, 0x00,     #_nop
+    ]) \
+    .build()
+
+# Automobili Lamborghini: similar deal, but no chunky reading this time.
+# don't see any overlays in the clear, so they are likely all compressed
+LAMBO_READ_CART_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,              # addiu      sp,sp,-0x28
+        0xaf, 0xbf, 0x00, 0x24,              # sw         ra,local_4(sp)
+        0xaf, 0xa4, 0x00, 0x28,              # sw         a0,local_res0(sp)
+        0xaf, 0xa5, 0x00, 0x2c,              # sw         a1,local_res4(sp)
+        0xaf, 0xa6, 0x00, 0x30,              # sw         a2,local_res8(sp)
+        0x8f, 0xa4, 0x00, 0x2c,              # lw         a0,local_res4(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD,  # jal        FUN_800750d0
+        0x8f, 0xa5, 0x00, 0x30,              # _lw        a1,local_res8(sp)
+        0x8f, 0xae, 0x00, 0x2c,              # lw         t6,local_res4(sp)
+        0x8f, 0xaf, 0x00, 0x30,              # lw         t7,local_res8(sp)
+        0x3c, 0x18, 0x80, WILDCARD,          # lui        t8,0x800a
+        0x27, 0x18, WILDCARD, WILDCARD,      # addiu      t8,t8,-0x7838
+        0x3c, 0x04, 0x80, WILDCARD,          # lui        a0,0x800a
+        0x24, 0x84, WILDCARD, WILDCARD,      # addiu      a0,a0,-0x7180
     ]) \
     .build()
 
@@ -149,18 +195,18 @@ def superman_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
     builder.initial_program_counter(preamble.crt_entry_point())
 
-    read_cart_offset = SUPERMAN_READ_CART_PATTERN.find(bootexe)
+    _, read_cart_offset = pick_pattern(bootexe, [ SUPERMAN_READ_CART_PATTERN, ROADSTERS_READ_CART_PATTERN, LAMBO_READ_CART_PATTERN ])
     if read_cart_offset is None:
         return None
     
     read_cart_address = read_cart_offset + ipc
-    logger.info("found Titus Superman readcart routine at 0x%08x", read_cart_address)
-
+    logger.info("found Titus readcart routine at 0x%08x", read_cart_address)
     logger.info("searching for potential overlay loads...")
 
     offset = 0
     readcart_call_pattern = _superman_build_readcart_call_pattern(read_cart_address)
 
+    captured_ranges = []
     while True:
         offset = readcart_call_pattern.find(bootexe, offset)
         if offset is None:
@@ -176,11 +222,20 @@ def superman_unpack(rom: N64Rom, ipc: int) -> Bffi:
         ram_load_address = consts["ram_load_address"].get_value()
         offset += readcart_call_pattern.size()
 
+        t = ( rom_start, rom_end, ram_load_address )
+        if t in captured_ranges:
+            continue
+        captured_ranges.append(t)
+
         resource = rom.read_bytes(rom_start, rom_end-rom_start)
         if STACK_MOVE_BACK_PATTERN.find(resource) is None:
+            logger.info("skip resource load (not code): ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                    rom_start,
+                    rom_end,
+                    ram_load_address)
             continue
 
-        logger.info("found code overlay: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+        logger.info("found uncompressed code overlay: ROM 0x%08x-0x%08x -> RAM 0x%08x",
                     rom_start,
                     rom_end,
                     ram_load_address)
