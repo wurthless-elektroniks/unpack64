@@ -108,6 +108,12 @@ GAME_SPECIFIC_UNPACKERS = {
     # NFL Quarterback Club 98 (E) [!]
     "493a19ce012a9f37dc2a35671e8d4b8d4e60d66963777de3ef4fc7ce30a3b6fb": nflqbc98_unpack,
 
+    # NBA Jam 99 (U) [!]
+    "062d9d741a324055d0799bc9f46e152fd427fdcc957328f3434cfa99d148eea7": allstar99_unpack,
+
+    # NBA Jam 99 (E) [!]
+    "f37cf583be0b9b5b94c7b7725ba219b09c90a1e33dc80f77b139fe2ca121c71e": allstar99_unpack,
+
     # ------------------------------------------------------
     # Iguana/Acclaim's Expansion Pak-friendly RNC unpacker and TLB swapper framework
     # ------------------------------------------------------

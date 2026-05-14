@@ -188,6 +188,8 @@ ALLSTAR99_BOOTENTRY_PATTERN = SignatureBuilder() \
         0x00, 0x00, 0x00, 0x00,         # +0xD0 _nop
     ]) \
     .size(0xD4) \
+    .const_op32_hi16("bootexe_argbase", 0x04) \
+    .const_op32_lo16("bootexe_argbase", 0x08) \
     .const_op32_hi16("fstable_address", 0x0C) \
     .const_op32_lo16("fstable_address", 0x10) \
     .const_op32_hi16("fsdata_address", 0x1C) \
@@ -195,6 +197,47 @@ ALLSTAR99_BOOTENTRY_PATTERN = SignatureBuilder() \
     .const_op32_hi16("entry_point", 0xC4) \
     .const_op32_lo16("entry_point", 0xC8) \
     .build()
+
+# same boot procedure/structure as Allstar 99, but clears TLB entries 0x00-0x1E.
+# this game doesn't really use the TLB though.
+NBAJAM99_BOOT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,             # +0x00 addiu  sp,sp,-0x28
+        0xaf, 0xb0, 0x00, 0x18,             # +0x04 sw     s0,local_10(sp)
+        0x3c, 0x10, WILDCARD, WILDCARD,     # +0x08 lui    s0,0x0
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x0C addiu  s0,s0,0x3390    <-- fstable ROM address
+        0xaf, 0xb1, 0x00, 0x1c,             # +0x10 sw     s1,local_c(sp)
+        0x3c, 0x11, WILDCARD, WILDCARD,     # +0x14 lui    s1,0x0
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0x18 addiu  s1,s1,0x6c08    <-- fsdata ROM address
+        0xaf, 0xbf, 0x00, 0x20,             # +0x1C sw     ra,local_8(sp)
+        0x3c, 0x01, 0x80, 0x00,             # +0x20 lui    at,0x8000
+        0xac, 0x30, 0x03, 0x5c,             # +0x24 sw     s0,offset DAT_8000035c(at)
+        0x3c, 0x01, 0x80, 0x00,             # +0x28 lui    at,0x8000
+        0xac, 0x31, 0x03, 0x60,             # +0x2C sw     s1,offset DAT_80000360(at)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x30 jal    tlb_init
+        0x00, 0x00, 0x00, 0x00,             # +0x34 _nop
+        0x02, 0x00, 0x20, 0x21,             # +0x38 move   a0,s0
+        0x27, 0xa5, 0x00, 0x10,             # +0x3C addiu  a1,sp,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x40 jal    read_cart
+        0x24, 0x06, 0x00, 0x04,             # +0x44 _li    a2,0x4
+    ]) \
+    .tail_pattern([
+        0x3c, 0x01, 0x80, WILDCARD,     # +0xC4 lui at,0x8000
+        0x34, 0x21, WILDCARD, WILDCARD, # +0xC8 ori at,at,0x400
+        0x00, 0x20, 0xf8, 0x09,         # +0xCC jalr at=>SUB_80000400
+        0x00, 0x00, 0x00, 0x00,         # +0xD0 _nop
+    ]) \
+    .size(0xD4) \
+    .const_op32_hi16("fstable_address", 0x08) \
+    .const_op32_lo16("fstable_address", 0x0C) \
+    .const_op32_hi16("fsdata_address", 0x14) \
+    .const_op32_lo16("fsdata_address", 0x18) \
+    .const_op32_hi16("bootexe_argbase", 0x20) \
+    .const_op32_lo16("bootexe_argbase", 0x24) \
+    .const_op32_hi16("entry_point", 0xC4) \
+    .const_op32_lo16("entry_point", 0xC8) \
+    .build()
+
 
 ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .pattern([
@@ -237,15 +280,21 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     bootentry_offset = preamble.crt_entry_point() - ipc
     logger.info("check for BootEntry() at 0x%08x", preamble.crt_entry_point())
-    if ALLSTAR99_BOOTENTRY_PATTERN.compare(rom.boot_exe(), bootentry_offset) is False:
+
+    pattern, _ = pick_pattern(rom.boot_exe(),
+                              [ NBAJAM99_BOOT_PATTERN, ALLSTAR99_BOOTENTRY_PATTERN ],
+                              comparing_at_offset=bootentry_offset)
+
+    if pattern.compare(rom.boot_exe(), bootentry_offset) is False:
         return None
 
-    logger.info("found Acclaim All-Star Baseball '99-style RNC unpacker")
+    logger.info("found Acclaim All-Star Baseball '99/NBA Jam '99-style RNC unpacker")
 
-    consts = ALLSTAR99_BOOTENTRY_PATTERN.consts(ipc, rom.boot_exe(), bootentry_offset)
+    consts = pattern.consts(ipc, rom.boot_exe(), bootentry_offset)
     fstable_address = consts["fstable_address"].get_value()
     fsdata_address = consts["fsdata_address"].get_value()
     entry_point = consts["entry_point"].get_value()
+    bootexe_argbase = consts["bootexe_argbase"].get_value()
 
     logger.info("Dumping filesystem...")
     filesystem = acclaimfs_read(rom,
@@ -259,16 +308,7 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
         return None
 
     logger.info("Loading main code segment from CODE.BIN")
-    payload = filesystem["CODE.BIN"]
-
-    # FIXME: CRC16 fails for Allstar Baseball 99 (Europe)
-    if payload[:3] == b'RNC':
-        logger.info("Unpacking RNC payload...")
-        payload = rnc_unpack(payload, skipping_input_checksum=True)
-        if payload is None:
-            logger.error("Error unpacking RNC-packed bootexe")
-            return None
-        logger.info("RNC decompress succeeded. uncompressed payload is %d bytes (0x%08x)", len(payload), len(payload))
+    payload = _auto_decompress(filesystem["CODE.BIN"])
 
     if payload[0] != 0x0C:
         logger.error("expected payload to start with a jal, but it didn't")
@@ -294,9 +334,11 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder = BffiBuilder()
     builder.bss(bss_start, bss_end-bss_start)
 
-    builder.fix(0x80000380,
+    logger.info("dropping bootexe arguments at 0x%08x", bootexe_argbase)
+    builder.fix(bootexe_argbase,
                 struct.pack(">II", fstable_address, fsdata_address),
                 segment_id=0)
+    
     builder.fix(entry_point, payload, segment_id=1)
     builder.initial_program_counter(real_crt_startup_location)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
@@ -337,8 +379,7 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
             if filename.endswith(overlay_filename):
                 logger.info("...reading from: %s", filename)
 
-                if data[:3] == b'RNC':
-                    data = rnc_unpack(data, skipping_input_checksum=True)
+                data = _auto_decompress(data)
 
                 builder.seg(overlay_load_address, data)
 

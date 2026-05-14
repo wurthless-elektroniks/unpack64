@@ -88,16 +88,6 @@ ALLSTAR99_REAL_ENTRY_POINT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("bss_end", 0x1C) \
     .build()
 
-
-# ------------------------------------------------------------------------------------------
-#
-# NBA Jam 99
-#
-# This is an earlier version of the TLB framework.
-# The unpacker stub will clear TLB entries 0x00-0x1E but not initialize 0x1F.
-#
-# ------------------------------------------------------------------------------------------
-
 # ------------------------------------------------------------------------------------------
 #
 # NBA Jam 2000
