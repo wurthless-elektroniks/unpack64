@@ -60,11 +60,12 @@ from enum import Enum
 
 from compression.mio0 import mio0_decompress
 
-from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
+from bffi import BffiBuilder
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
-from reloc import demunge_mips_hilo_offset, munge_mips_hilo_offset
+from reloc import demunge_mips_hilo_offset
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -711,18 +712,6 @@ AEROFIGHTERS_MAIN_OVERLAY_LOAD_PATTERN = SignatureBuilder() \
     .const_op32_lo16("load_address", 0x3C) \
     .build()
 
-
-def _pick_pattern(bootexe: bytes):
-    pattern_offset = AEROFIGHTERS_MAIN_OVERLAY_LOAD_PATTERN.find(bootexe)
-    if pattern_offset is not None:
-        return AEROFIGHTERS_MAIN_OVERLAY_LOAD_PATTERN, pattern_offset
-    
-    pattern_offset = PILOTWINGS_MAIN_OVERLAY_LOAD_PATTERN.find(bootexe)
-    if pattern_offset is not None:
-        return PILOTWINGS_MAIN_OVERLAY_LOAD_PATTERN, pattern_offset
-
-    return None, None
-
 def aerofighters_unpack(rom: N64Rom, ipc: int):
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -736,7 +725,9 @@ def aerofighters_unpack(rom: N64Rom, ipc: int):
     earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
     bootexe = rom.boot_exe()[:earliest_bss-ipc]
 
-    pattern, main_overlay_load_offset = _pick_pattern(bootexe)
+    pattern, main_overlay_load_offset = pick_pattern(bootexe,
+                                                     [AEROFIGHTERS_MAIN_OVERLAY_LOAD_PATTERN,
+                                                      PILOTWINGS_MAIN_OVERLAY_LOAD_PATTERN])
     if pattern is None:
         return None
     

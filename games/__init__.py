@@ -11,8 +11,8 @@ from .ea import nhl99_unpack, nbalive2k_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
-from .extremeg import extremeg_unpack, xg2_unpack
-from .factor5 import rogue_us_unpack, rogue_jp_unpack, indy_unpack
+from .extremeg import extremeg_unpack
+from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
@@ -25,7 +25,7 @@ from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
 from .mspacman import mspacman_unpack
 from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
-from .rare import bk_unpack, blastcorps_unpack, dk64us_unpack, dk64jp_unpack
+from .rare import bk_unpack, blastcorps_unpack, dk64_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .slugfest import slugfest_unpack
@@ -187,13 +187,13 @@ GAME_SPECIFIC_UNPACKERS = {
     "45cfbf079b7c5777ee47f3b86c643eeeb406acb2a84c95ec4ab2b5e2d754107b": extremeg_unpack,
 
     # Extreme-G XG2 (U) [!]
-    "0b5d9904cf45a92396396308506da0ae258afe44a902c96e50d0ff4969c67500": xg2_unpack,
+    "0b5d9904cf45a92396396308506da0ae258afe44a902c96e50d0ff4969c67500": extremeg_unpack,
 
     # Extreme-G XG2 (J) [!]
-    "5004c79552feb976b72aec4fa3e3eba2e19f7e7b6233be58acee9f7b7fb75cbe": xg2_unpack,
+    "5004c79552feb976b72aec4fa3e3eba2e19f7e7b6233be58acee9f7b7fb75cbe": extremeg_unpack,
 
     # Extreme-G XG2 (E) (M5) [!]
-    "de1deae125b6f17048cb240132dbfe918b8fec61fe2ed1fe8e5a2e03995211b3": xg2_unpack,
+    "de1deae125b6f17048cb240132dbfe918b8fec61fe2ed1fe8e5a2e03995211b3": extremeg_unpack,
 
     # ------------------------------------------------------
     # Rareware DEFLATE-based unpacker (zlib or gzip)
@@ -221,13 +221,13 @@ GAME_SPECIFIC_UNPACKERS = {
     "88b8ab9ea99dd0d226c3699d1386c7e4b3253ce0b4ab1d298855a4c82bd28229": blastcorps_unpack,
 
     # Donkey Kong 64 (U) [!]
-    "b6347d9f1f75d38a88d829b4f80b1acf0d93344170a5fbe9546c484dae416ce3": dk64us_unpack,
+    "b6347d9f1f75d38a88d829b4f80b1acf0d93344170a5fbe9546c484dae416ce3": dk64_unpack,
 
     # Donkey Kong 64 (J) [!]
-    "8a6a5b48b0a4d5d31fa59608e65bafe787b8664fbc9dbaecbcce16e41e8934cd": dk64jp_unpack,
+    "8a6a5b48b0a4d5d31fa59608e65bafe787b8664fbc9dbaecbcce16e41e8934cd": dk64_unpack,
 
     # Donkey Kong 64 (E) [!]
-    "f704ddc06dda5bee065dd89adcf86aa58bd817684e190094cd0776c0cabba9df": dk64jp_unpack,
+    "f704ddc06dda5bee065dd89adcf86aa58bd817684e190094cd0776c0cabba9df": dk64_unpack,
 
 
     # ------------------------------------------------------
@@ -251,16 +251,16 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
 
     # Star Wars - Rogue Squadron (U) (M3) [!].z64
-    "9c32d0087fa2b83c5ee6f19ee86683907653ed8f30e7d4680a0adac334559dd7": rogue_us_unpack,
+    "9c32d0087fa2b83c5ee6f19ee86683907653ed8f30e7d4680a0adac334559dd7": rogue_unpack,
 
     # Star Wars - Shutsugeki! Rogue Chuutai (J) [!]
-    "6c13a4b27820ab17f8e9d67775cf68f6df757c62babc6347542e5d456770878c": rogue_jp_unpack,
+    "6c13a4b27820ab17f8e9d67775cf68f6df757c62babc6347542e5d456770878c": rogue_unpack,
 
     # Star Wars - Rogue Squadron (E) (M3) (V1.0) [!]
-    "a33b6b738116c36e78a0d078ceb9ff7ddaa7b36244689421fa7d85d70ccc2273": rogue_us_unpack,
+    "a33b6b738116c36e78a0d078ceb9ff7ddaa7b36244689421fa7d85d70ccc2273": rogue_unpack,
 
     # Star Wars - Rogue Squadron (E) (M3) (V1.1) [!]
-    "592b37eed2730ae25232b163dea6632cf6b9ed21dd3be35c0500a939b897627b": rogue_jp_unpack,
+    "592b37eed2730ae25232b163dea6632cf6b9ed21dd3be35c0500a939b897627b": rogue_unpack,
 
     # Indiana Jones and the Infernal Machine (U) [!]
     "6e127e592f098a28c92d2032d71c56af1412e5dd189fe792d9238b12a0928c59": indy_unpack,

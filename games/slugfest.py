@@ -47,6 +47,8 @@ from compression.mio0 import mio0_decompress
 from n64rom import N64Rom
 from preamble import preamble_extract_bss_sections_to_bffi, identify_preamble
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
+from strutil import extract_cstring
 
 logger = logging.getLogger(__name__)
 
@@ -125,19 +127,6 @@ def _slugfest_unpack_chunky_mio0(chunky_data: bytes, output_size: int):
         
     return output
 
-def _extract_cstring(data: bytes):
-    return data.partition(b'\x00')[0].decode('ascii')
-
-def _pick_pattern(bootexe: bytes, crt_entry_offset: int):
-    if SLUGFEST_BOOTENTRY_PATTERN.compare(bootexe, crt_entry_offset):
-        return SLUGFEST_BOOTENTRY_PATTERN
-    
-    if GRIFFEY_BOOTENTRY_PATTERN.compare(bootexe, crt_entry_offset):
-        return GRIFFEY_BOOTENTRY_PATTERN
-    
-    return None
-
-
 def _load_overlay_segment(rom: N64Rom, bootexe: bytes, ipc: int, rom_location_table: int, rom_entry_id: int):
     rom_entry_offset = (rom_location_table - ipc) + (rom_entry_id * 12)
     rom_start_address, rom_end_address, uncompressed_size = \
@@ -172,7 +161,9 @@ def slugfest_unpack(rom: N64Rom, ipc: int):
 
     crt_entry_offset = preamble.crt_entry_point() - ipc
 
-    bootentry_pattern = _pick_pattern(bootexe, crt_entry_offset)
+    bootentry_pattern, _ = pick_pattern(crt_entry_offset,
+                                     [GRIFFEY_BOOTENTRY_PATTERN, SLUGFEST_BOOTENTRY_PATTERN],
+                                     comparing_at_offset=crt_entry_offset)
     if bootentry_pattern is None:
         return None
     
@@ -187,7 +178,7 @@ def slugfest_unpack(rom: N64Rom, ipc: int):
 
     overlay_table_read_offset = overlay_table_address - ipc
     while True:
-        overlay_name = _extract_cstring(bootexe[overlay_table_read_offset:overlay_table_read_offset+0x10])
+        overlay_name = extract_cstring(bootexe[overlay_table_read_offset:overlay_table_read_offset+0x10])
 
         if overlay_name == "":
             break

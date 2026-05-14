@@ -23,9 +23,9 @@ import struct
 from compression.lzss import lzss_decompress
 from preamble import identify_preamble
 from n64rom import N64Rom
-from bffi import Bffi,BffiBuilder,BffiSectionType
+from bffi import Bffi,BffiBuilder
 from signature import SignatureBuilder, WILDCARD
-from mips import disassemble_jump_imm26_target
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -69,53 +69,6 @@ EXTREMEG_UNPACKER_PATTERN = SignatureBuilder() \
     .const_op32_hi16("payload_address", 0x4C) \
     .const_op32_lo16("payload_address", 0x50) \
     .build()
-
-
-def extremeg_unpack_common(rom: N64Rom, ipc: int, payload_address: int) -> Bffi:
-    logger.info("payload will load to 0x%08x", payload_address)
-
-    payload_offset = payload_address - ipc
-    magic, uncompressed, compressed = struct.unpack(">III", rom.boot_exe()[payload_offset + 0x0C:payload_offset + 0x0C + 0x0C])
-    if magic != 0x4C5A5353:
-        logger.error("invalid LZSS magic word")
-        return None
-    logger.info("uncompressed size %d, compressed size %d", uncompressed, compressed)
-
-    lzss_data = rom.boot_exe()[payload_offset + 0x0C + 0x0C:payload_offset + 0x0C + 0x0C + compressed]
-    uncompressed_data = lzss_decompress(lzss_data)
-
-    if len(uncompressed_data) != uncompressed:
-        logger.error("uncompressed size mismatch. expected %d, got %d", uncompressed, len(uncompressed_data))
-        return None
-    
-    real_preamble = identify_preamble(uncompressed_data, payload_address)
-    if real_preamble is None:
-        logger.error("real preamble was not recognized")
-        return None
-    
-    builder = BffiBuilder()
-    builder.initial_program_counter(real_preamble.crt_entry_point())
-    builder.initial_stack_pointer(real_preamble.initial_stack_pointer())
-    for bss_start, bss_end in real_preamble.bss_sections():
-        builder.bss(bss_start, bss_end-bss_start)
-
-    builder.fix(payload_address, uncompressed_data)
-
-    return builder.build()
-
-def extremeg_unpack(rom: N64Rom, ipc: int) -> Bffi:
-    preamble = identify_preamble(rom.boot_exe(), ipc)
-    if preamble is None:
-        return None
-    
-    if EXTREMEG_UNPACKER_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
-        return None
-    
-    logger.info("found Extreme-G LZSS unpacker")
-
-    consts = EXTREMEG_UNPACKER_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
-    payload_address = consts["payload_address"].get_value()
-    return extremeg_unpack_common(rom, ipc, payload_address)
 
 # XG2 is the same unpacker, but the return address and s0 are pushed to the stack
 # even though this function will not be returning (it jumps right to the bootexe)
@@ -162,16 +115,51 @@ XG2_UNPACKER_PATTERN = SignatureBuilder() \
     .const_op32_lo16("payload_address", 0x58) \
     .build()
 
-def xg2_unpack(rom: N64Rom, ipc: int) -> Bffi:
+
+def extremeg_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
         return None
     
-    if XG2_UNPACKER_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
+    pattern, _ = pick_pattern(rom.boot_exe(),
+                              [ XG2_UNPACKER_PATTERN, EXTREMEG_UNPACKER_PATTERN ],
+                              comparing_at_offset=preamble.crt_entry_point() - ipc)
+    
+    if pattern is None:
         return None
     
-    logger.info("found XG2 LZSS unpacker")
+    logger.info("found Extreme-G LZSS unpacker")
 
-    consts = XG2_UNPACKER_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
+    consts = pattern.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
     payload_address = consts["payload_address"].get_value()
-    return extremeg_unpack_common(rom, ipc, payload_address)
+
+    logger.info("payload will load to 0x%08x", payload_address)
+
+    payload_offset = payload_address - ipc
+    magic, uncompressed, compressed = struct.unpack(">III", rom.boot_exe()[payload_offset + 0x0C:payload_offset + 0x0C + 0x0C])
+    if magic != 0x4C5A5353:
+        logger.error("invalid LZSS magic word")
+        return None
+    logger.info("uncompressed size %d, compressed size %d", uncompressed, compressed)
+
+    lzss_data = rom.boot_exe()[payload_offset + 0x0C + 0x0C:payload_offset + 0x0C + 0x0C + compressed]
+    uncompressed_data = lzss_decompress(lzss_data)
+
+    if len(uncompressed_data) != uncompressed:
+        logger.error("uncompressed size mismatch. expected %d, got %d", uncompressed, len(uncompressed_data))
+        return None
+    
+    real_preamble = identify_preamble(uncompressed_data, payload_address)
+    if real_preamble is None:
+        logger.error("real preamble was not recognized")
+        return None
+    
+    builder = BffiBuilder()
+    builder.initial_program_counter(real_preamble.crt_entry_point())
+    builder.initial_stack_pointer(real_preamble.initial_stack_pointer())
+    for bss_start, bss_end in real_preamble.bss_sections():
+        builder.bss(bss_start, bss_end-bss_start)
+
+    builder.fix(payload_address, uncompressed_data)
+
+    return builder.build()

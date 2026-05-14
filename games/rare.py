@@ -17,6 +17,7 @@ from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -450,7 +451,20 @@ DK64_J_IDLETHREAD_PATTERN = SignatureBuilder() \
     .const_op32_lo16("code_section_gz_rom_end",   0x8C) \
     .build()
 
-def dk64_common_unpack(rom: N64Rom, ipc: int, consts: dict) -> Bffi:
+def dk64_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    idlethread_pattern, idlethread_pos = \
+        pick_pattern(rom.boot_exe()[:0x2000],
+                     [DK64_U_IDLETHREAD_PATTERN, DK64_J_IDLETHREAD_PATTERN])
+
+    if idlethread_pos is None:
+        logger.error("idlethread not found")
+        return None
+
+    logger.info("found Donkey Kong 64 unpacker")
+
+    logger.info("idle thread code is at 0x%08x", ipc + idlethread_pos)
+    consts = idlethread_pattern.consts(ipc, rom.boot_exe(), idlethread_pos)
+
     logger.info("now identifying preamble...")
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
@@ -499,35 +513,6 @@ def dk64_common_unpack(rom: N64Rom, ipc: int, consts: dict) -> Bffi:
     builder.initial_program_counter(preamble.crt_entry_point())
     builder.initial_stack_pointer(preamble.initial_stack_pointer())
     return builder.build()
-
-def dk64us_unpack(rom: N64Rom, ipc: int) -> Bffi:
-
-    # dk64 only starts loading code segments to RAM after the idle thread starts.
-    idlethread_pos = DK64_U_IDLETHREAD_PATTERN.find(rom.boot_exe()[:0x2000])
-    if idlethread_pos is None:
-        logger.error("idlethread not found")
-        return None
-
-    logger.info("found dk64 US unpacker")
-
-    logger.info("idle thread code is at 0x%08x", ipc + idlethread_pos)
-    consts = DK64_U_IDLETHREAD_PATTERN.consts(ipc, rom.boot_exe(), idlethread_pos)
-
-    return dk64_common_unpack(rom, ipc, consts)
-
-def dk64jp_unpack(rom: N64Rom, ipc: int) -> Bffi:
-    # dk64 only starts loading code segments to RAM after the idle thread starts.
-    idlethread_pos = DK64_J_IDLETHREAD_PATTERN.find(rom.boot_exe()[:0x2000])
-    if idlethread_pos is None:
-        logger.error("idlethread not found")
-        return None
-    
-    logger.info("found dk64 JP/EU unpacker")
-
-    logger.info("idle thread code is at 0x%08x", ipc + idlethread_pos)
-    consts = DK64_J_IDLETHREAD_PATTERN.consts(ipc, rom.boot_exe(), idlethread_pos)
-
-    return dk64_common_unpack(rom, ipc, consts)
 
 # ---------------------------------------------------------------
 #

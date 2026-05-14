@@ -40,6 +40,7 @@ from bffi import BffiBuilder
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
+from strutil import extract_cstring
 
 logger = logging.getLogger(__name__)
 
@@ -368,9 +369,6 @@ def _read_file_contents(rom: N64Rom, read_offset: int) -> tuple[int,dict[USOFile
             sections[entry_type] = data
             read_offset += num_bytes
 
-def _extract_cstring(data: bytes):
-    return data.partition(b'\x00')[0].decode('ascii')
-
 def _extract_files_in_filesystem(rom: N64Rom, read_offset: int, parent_filesystem: str) -> list[USOFile]:
     files = []
     while True:
@@ -427,7 +425,7 @@ def _extract_all_files(rom: N64Rom,
                 raise RuntimeError("heap base address set multiple times")
             heap_base_addr = heap_base
 
-        filesystem_name = _extract_cstring(bootexe[filename_ptr-ipc:])
+        filesystem_name = extract_cstring(bootexe[filename_ptr-ipc:])
         all_files += _extract_files_in_filesystem(rom, rom_start_address, filesystem_name)
 
         offset += (4*5)
@@ -682,7 +680,7 @@ def uso_unpack(rom: N64Rom, ipc: int):
     filesystem_list_ptr = consts["filesystem_list_ptr"].get_value()
     bootexe_filename_ptr = consts["bootexe_filename_ptr"].get_value()
 
-    bootexe_filename = _extract_cstring(rom.boot_exe()[bootexe_filename_ptr-ipc:])
+    bootexe_filename = extract_cstring(rom.boot_exe()[bootexe_filename_ptr-ipc:])
 
     heap_base, files = _extract_all_files(rom, ipc, filesystem_list_ptr)
 

@@ -14,6 +14,7 @@ from mips import disassemble_jump_imm26_target
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,22 @@ ROGUE_JP_ENTRYPOINT_PATTERN = SignatureBuilder() \
     .const_op32_lo16("bss2_size", 0x30) \
     .build()
 
-def rogue_unpack_common(rom: N64Rom, ipc: int, preamble, consts) -> Bffi:
+def rogue_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    pattern, _ = pick_pattern(rom.boot_exe(),
+                              [ROGUE_JP_ENTRYPOINT_PATTERN, ROGUE_US_ENTRYPOINT_PATTERN],
+                              comparing_at_offset=preamble.crt_entry_point() - ipc)
+
+    if pattern is None:
+        return None
+    
+    logger.info("found Rogue Squadron entry point")
+
+    consts = pattern.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
+    
     bss1_start = consts["bss1_start"].get_value()
     bss1_size  = consts["bss1_size"].get_value()
     bss2_start = consts["bss2_start"].get_value()
@@ -101,32 +117,6 @@ def rogue_unpack_common(rom: N64Rom, ipc: int, preamble, consts) -> Bffi:
     builder.initial_program_counter(preamble.crt_entry_point())
 
     return builder.build()
-
-def rogue_us_unpack(rom: N64Rom, ipc: int) -> Bffi:
-    preamble = identify_preamble(rom.boot_exe(), ipc)
-    if preamble is None:
-        return None
-    
-    if ROGUE_US_ENTRYPOINT_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
-        return None
-    
-    logger.info("found Rogue Squadron (US) entry point")
-
-    consts = ROGUE_US_ENTRYPOINT_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
-    return rogue_unpack_common(rom, ipc, preamble, consts)
-
-def rogue_jp_unpack(rom: N64Rom, ipc: int) -> Bffi:
-    preamble = identify_preamble(rom.boot_exe(), ipc)
-    if preamble is None:
-        return None
-    
-    if ROGUE_JP_ENTRYPOINT_PATTERN.compare(rom.boot_exe(), preamble.crt_entry_point() - ipc) is False:
-        return None
-    
-    logger.info("found Rogue Squadron (Japan) entry point")
-
-    consts = ROGUE_JP_ENTRYPOINT_PATTERN.consts(ipc, rom.boot_exe(), preamble.crt_entry_point() - ipc)
-    return rogue_unpack_common(rom, ipc, preamble, consts)
 
 # ----------------------------------------------------------------------
 #

@@ -34,6 +34,7 @@ from bffi import Bffi, BffiBuilder
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD, Signature
+from sigutil import pick_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -121,17 +122,6 @@ def _unpack_erz_table(rom: N64Rom, table_base_pi_address: int):
 
     return output
 
-def _pick_pattern(bootroutine: bytes) -> tuple[Signature, int]:
-    erz_pattern_offset = ERZ_GENERIC_PATTERN.find(bootroutine)
-    if erz_pattern_offset is not None:
-        return ERZ_GENERIC_PATTERN, erz_pattern_offset
-    
-    erz_pattern_offset = ERZ_MTM64_PATTERN.find(bootroutine)
-    if erz_pattern_offset is not None:
-        return ERZ_MTM64_PATTERN, erz_pattern_offset
-
-    return None, None
-
 def erz_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("using identify_preamble() to grab standard libultra bss-free preamble")
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -141,7 +131,8 @@ def erz_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # find unpacker within 0x250 bytes of the entry point
     bootroutine = rom.boot_exe()[preamble.crt_entry_point()-ipc:(preamble.crt_entry_point()+0x250)-ipc]
 
-    erz_pattern, erz_pattern_offset = _pick_pattern(bootroutine)
+    erz_pattern, erz_pattern_offset = pick_pattern(bootroutine,
+                                                   [ ERZ_GENERIC_PATTERN, ERZ_MTM64_PATTERN])
     if erz_pattern_offset is None:
         logger.error("can't find ERZ pattern")
         return None
