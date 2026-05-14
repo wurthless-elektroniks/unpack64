@@ -57,3 +57,35 @@ def acclaimfs_read(rom: N64Rom,
 
 
         entries[fn] = filedata
+
+def acclaim_anonyfs_read(rom: N64Rom,
+                   fstable_address: int,
+                   fsdata_address: int,
+                   align_nearest_word: bool = False,
+                   skip_decompress: bool = False):
+
+    entries = []
+
+    fstable_offset = fstable_address
+    fsdata_offset = fsdata_address
+
+    while True:
+        start_offset, end_offset = struct.unpack(">II", rom.read_bytes(fstable_offset, 8))
+        if end_offset == 0:
+            return entries
+        fstable_offset += 4
+        
+        if align_nearest_word and (fstable_offset & 3) != 0:
+            fstable_offset = (fstable_offset + 4) & 0xFFFFFFFC
+
+        sizeof = end_offset-start_offset
+
+        filedata = rom.read_bytes(fsdata_offset, sizeof)
+        fsdata_offset += sizeof
+        if skip_decompress is False and filedata[:3] == b'RNC':
+            filedata = rnc_unpack(filedata, skipping_input_checksum=True)
+
+        if filedata is None:
+            logger.error("ERROR extracting entry %04x", len(entries))
+
+        entries.append(filedata)

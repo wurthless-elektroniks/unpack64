@@ -16,8 +16,8 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
-from .iguana import turok_unpack, allstar99_unpack, allstar2k_unpack, nbajam2k_unpack, \
-                    chef_unpack, nflqbc99_unpack
+from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
+from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
@@ -101,6 +101,16 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # All-Star Baseball '99 (E) [!]
     "94c4b3f6964109fe237e158ba5a659d5c05b14361f35f6c36a3e6583434782ef": allstar99_unpack,
+
+    # NFL Quarterback Club 98 (U) [!]
+    "937c256ee962095dc57aff47e5196004f02b5e70bbc7fb430bad0ad4d8385a95": nflqbc98_unpack,
+
+    # NFL Quarterback Club 98 (E) [!]
+    "493a19ce012a9f37dc2a35671e8d4b8d4e60d66963777de3ef4fc7ce30a3b6fb": nflqbc98_unpack,
+
+    # ------------------------------------------------------
+    # Iguana/Acclaim's Expansion Pak-friendly RNC unpacker and TLB swapper framework
+    # ------------------------------------------------------
 
     # NBA Jam 2000 (U) [!]
     "c41d5622e96280fb00d8c2f17a80fc5cf9520b4b209788a6240e152a1c88c540": nbajam2k_unpack,
@@ -630,6 +640,9 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NHL Blades of Steel '99 (U) [!]
     "779fa692d07c6a322e189ec80183cb5fa700bbae1c8d5476a78d4ace3cfa4434": castlevania_unpack, 
+
+    # NHL Pro 99 (E) [!]
+    "800dcc787de9fcdb1210b88bc8c23045a4770e7f692222fde039c306c26e5f12": castlevania_unpack,
 
     # Susume! Taisen Puzzle Dama Toukon! Marumata Chou (J) [!]
     "bf07279640b1c64287f02413794c8200769a74570d3cb0e5e5d22df4c1dda66e": castlevania_unpack,

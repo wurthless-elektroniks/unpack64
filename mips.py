@@ -35,7 +35,8 @@ INSTRUCTION_JMP_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b000010))
 INSTRUCTION_ORI_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b001101))
 
 
-INSTRUCTION_LW_TEMPLATE = _to_uint32(_instruction_template_jtype(0b100011))
+INSTRUCTION_LW_TEMPLATE  = _to_uint32(_instruction_template_jtype(0b100011))
+INSTRUCTION_LHU_TEMPLATE = _to_uint32(_instruction_template_jtype(0b100101))
 INSTRUCTION_SW_TEMPLATE = _to_uint32(_instruction_template_jtype(0b101011))
 
 
@@ -70,7 +71,9 @@ def disassemble_load_store_imm16(oporg: int, opbytes: bytes) -> int | None:
     opword = _to_uint32(opbytes)
     masked = (opword & INSTRUCTION_DECODE_BITMASK_UPPER_6)
 
-    if masked in [ INSTRUCTION_LW_TEMPLATE, INSTRUCTION_SW_TEMPLATE ]:
+    if masked in [ INSTRUCTION_LW_TEMPLATE,
+                   INSTRUCTION_SW_TEMPLATE,
+                   INSTRUCTION_LHU_TEMPLATE]:
         return _to_int16(opbytes[2:4])
 
     # unrecognized opcode - give up
