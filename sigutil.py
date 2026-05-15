@@ -16,6 +16,8 @@ def pick_pattern(buffer: bytes,
     for pattern in patterns:
         if comparing_at_offset is None:
             offset = pattern.find(buffer)
+            if offset is None:
+                continue
             return pattern, offset
         if pattern.compare(buffer, comparing_at_offset):
             return pattern, comparing_at_offset

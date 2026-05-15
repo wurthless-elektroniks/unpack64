@@ -285,7 +285,7 @@ def allstar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
                               [ NBAJAM99_BOOT_PATTERN, ALLSTAR99_BOOTENTRY_PATTERN ],
                               comparing_at_offset=bootentry_offset)
 
-    if pattern.compare(rom.boot_exe(), bootentry_offset) is False:
+    if pattern is None:
         return None
 
     logger.info("found Acclaim All-Star Baseball '99/NBA Jam '99-style RNC unpacker")

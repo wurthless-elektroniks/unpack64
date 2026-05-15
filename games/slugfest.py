@@ -161,7 +161,7 @@ def slugfest_unpack(rom: N64Rom, ipc: int):
 
     crt_entry_offset = preamble.crt_entry_point() - ipc
 
-    bootentry_pattern, _ = pick_pattern(crt_entry_offset,
+    bootentry_pattern, _ = pick_pattern(bootexe,
                                      [GRIFFEY_BOOTENTRY_PATTERN, SLUGFEST_BOOTENTRY_PATTERN],
                                      comparing_at_offset=crt_entry_offset)
     if bootentry_pattern is None:

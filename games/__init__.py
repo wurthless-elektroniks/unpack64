@@ -16,6 +16,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
+from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
@@ -828,6 +829,16 @@ GAME_SPECIFIC_UNPACKERS = {
     "06c9c992014da5982e747117c690c1590a011c0c6756b0522df126366bf8b9a1": superman_unpack,
 
     # Virtual Chess 64 might be single-load
+
+    # ------------------------------------------------------
+    # Human Entertainment
+    # ------------------------------------------------------
+
+    # Airboarder 64 (J) [!]
+    "e3fa6d6f13671237e703f32d01f48aff62071114a7a92086c9e3229d1b943ecc": airboarders_unpack,
+
+    # Airboarder 64 (E) [!]
+    "adc68241f2472aa5b4cd71f189f0b04f44d99e4d29776e831feb0ef86e6ceb79": airboarders_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
