@@ -19,6 +19,7 @@ from .hal import kirby64_unpack, smash64_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
+from .locomotive import pennyracers_unpack, transformers_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
@@ -839,6 +840,29 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Airboarder 64 (E) [!]
     "adc68241f2472aa5b4cd71f189f0b04f44d99e4d29776e831feb0ef86e6ceb79": airboarders_unpack,
+
+    # ------------------------------------------------------
+    # Locomotive Corporation
+    # ------------------------------------------------------
+
+    # Penny Racers (U) [!]
+    "f8f58b65f6d50fdd42a478573e39371faec03c448e39c4f99af9a0860d6bd6a1": pennyracers_unpack,
+
+    # Choro Q 64 (J) [!]
+    "e54dd88e65c6a14b7d591118c18d1c69551de334dbebba43d70a96162d63ba32": pennyracers_unpack,
+
+    # Penny Racers (E) [!]
+    "c2f4887ee2c9129ac9d550b0e8877fcf9066f56474a82967362df4b561f72487": pennyracers_unpack,
+
+    # Choro Q 64 II: might be single-load (can't find code outside bootexe)
+
+    # AeroGauge: same, can't find code outside bootexe
+
+    # Transformers - Beast Wars Transmetal (U) [!]
+    "aae1c838d88a4ff7eac6b515452265416141f22bc5dea760c66d0f1eb811165b": transformers_unpack,
+
+    # Transformers - Beast Wars Metals 64 (J) [!]
+    "8f9aea4cdf8cbf85a62efab04bc39b43fee7b73bac489bd38af62ff0955cd462": transformers_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

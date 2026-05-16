@@ -5,8 +5,6 @@ Human Entertainment
 import logging
 import struct
 
-from compression.brs import brs_decompress
-
 from bffi import BffiBuilder, Bffi
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
