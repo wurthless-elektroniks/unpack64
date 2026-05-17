@@ -20,6 +20,7 @@ from .hal import kirby64_unpack, smash64_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
+from .imagineer import simcity_unpack, yakyuuking_unpack, mrc_unpack, fightersdestiny_unpack
 from .locomotive import pennyracers_unpack, transformers_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
 from .mariotennis import mariotennis_unpack
@@ -906,6 +907,52 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Buck Bumble (E) (M5) [!]
     "3ac266d98a84f01174ad7ffbb532f3e3bc041a57ebc8874c0b45bb062899a6db": buckbumble_unpack,
+
+    # ------------------------------------------------------
+    # Imagineer/Genki games
+    # ------------------------------------------------------
+
+    # Sim City 2000 (J) [!]
+    "858bfc0a47afb73452b59966095fc1a96d3fb701da274d4ea7acea5f74451f8d": simcity_unpack,
+
+    # Chou Kuukan Night Pro Yakyuu King (J) [!]
+    "a8267610ebf5832a222de6689a8364ce60b981bc327fbe83bf3871f9e6275255": yakyuuking_unpack,
+
+    # MRC - Multi Racing Championship (U) [!]
+    "5729e822337b7dfac5ae81210f1c2e3bfa739b90dfc8182d9e573a4990dd14d9": mrc_unpack,
+
+    # MRC - Multi Racing Championship (J) [!]
+    "5e26351f7b09cfbc64c6e89381eec3e45e27527e8bb83ae8d8aadaf01c113b0c": mrc_unpack,
+
+    # MRC - Multi Racing Championship (E) (M3) [!]
+    "7d9e4554abd1c360f9af32ff72c6be47d8f67ce3f08e1c8ffef0ea8aa70ad622": mrc_unpack,
+
+    # Rally Challenge 2000 (U) [!]
+    "60681b4ff96742f6e4d77043cf37f8f22d73bdc257c2605be41283de96c88db3": simcity_unpack,
+
+    # Rally '99 (J) [!]
+    "f2d510d7ebda2abe25221137a0170a9fd98fb60892fb84ef6ef33f3e7c217dee": simcity_unpack,
+
+    # Fighter's Destiny (U) [!]
+    "0e6dae67a6e002eb14b4c890fbce18491560c87430e11711f31c0264f6843175": fightersdestiny_unpack,
+
+    # Fighting Cup (J) [!]
+    "b52c505767ae8ffb9dc1168b7f45efb1e440f83adbc1c76a2c937cfc4a24742a": fightersdestiny_unpack,        
+
+    # Fighter's Destiny (E) [!]
+    "45ca5db19ca02452a2b381135f4c866f1a4201e16766f705a3dfd952c04001c4": fightersdestiny_unpack,
+
+    # Fighter's Destiny (F) [!]
+    "4e46e50062480bf4cbca6936dd46e6e16e714da21a21e2e4250ede73d528c3f0": fightersdestiny_unpack,
+
+    # Fighter's Destiny (G) [!]
+    "604cf4dc2f8bbf24091e1a3a9ae431d7a98ed10735de7e2f999fb68ce99a088f": fightersdestiny_unpack,
+
+    # Fighter Destiny 2 (U) [!]
+    "f38166f6d8ef4f04fc698cd8c4885b84622e4eb58f0aefca47b95af1eb7c3c6d": simcity_unpack,
+
+    # Kakutou Denshou - F-Cup Maniax (J) [!]
+    "aa4b4f7528a8f465ef0152652f86888790b6ab0ec0fdced22e349885afcdff64": simcity_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
