@@ -32,6 +32,7 @@ from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .slugfest import slugfest_unpack
 from .titus import superman_unpack
+from .tt import ts2_unpack
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
@@ -863,6 +864,34 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Transformers - Beast Wars Metals 64 (J) [!]
     "8f9aea4cdf8cbf85a62efab04bc39b43fee7b73bac489bd38af62ff0955cd462": transformers_unpack,
+
+    # ------------------------------------------------------
+    # Traveller's Tales
+    # ------------------------------------------------------
+
+    # Toy Story 2 (U) [!]
+    "b8b0db1259ca80b4397c3c58ef63d38100a69d436ed3f097079eb81d07e764c9": ts2_unpack,
+
+    # Toy Story 2 (E) [!]
+    "ae77d1d9b5aa207ea2ec5daa0a0d6bd680425041bacb9dfdc984dd0ec8f39fa1": ts2_unpack,
+
+    # Toy Story 2 (F) [!]
+    "5ff7efb853a66959e1a8a96d94942d96ea97d5409769edcb4952db41b0c82a04": ts2_unpack,
+
+    # Toy Story 2 (G) [!]
+    "04392e31d7be9b6b138e3030a08d256326071a0dbe16398d2ea7b1836427249b": ts2_unpack,
+
+    # Bug's Life, A (U) [!]
+    "a9a3ad10d2660e0fa8c1c23c6a75f900ee2882569917abab6e258f3bd333a3e4": ts2_unpack,
+
+    # Bug's Life, A (E) [!]
+    "2c67a977be8c159298d3e1e93e1f2d390994037d73ac786705943ee3dcd9ee53": ts2_unpack,
+
+    # Bug's Life, A (F) [!]
+    "ca95b985145db27f39d08166829df792a08fb83192368aa4acf9174efa53b12d": ts2_unpack,
+
+    # Bug's Life, A (G) [!]
+    "296969309890de4f1b0b62ca6f8b0ad29742a26817794e33d6ee4846676b137b": ts2_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
