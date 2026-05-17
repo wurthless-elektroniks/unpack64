@@ -5,6 +5,7 @@ Game-specific unpacker drivers.
 from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
+from .buckbumble import buckbumble_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
 from .ea import nhl99_unpack, nbalive2k_unpack
@@ -892,6 +893,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Bug's Life, A (G) [!]
     "296969309890de4f1b0b62ca6f8b0ad29742a26817794e33d6ee4846676b137b": ts2_unpack,
+
+    # ------------------------------------------------------
+    # Buck Bumble
+    # ------------------------------------------------------
+
+    # Buck Bumble (U) [!]
+    "d21e3d1c2ec4d7f025cfaa119553be9a5fa87a9fd6625ef1ef44dc1d4b0aa54b": buckbumble_unpack,
+
+    # Buck Bumble (J) [!]
+    "9b4be33fe5adbc911e69546bcb0149c380f00f02c669539411a8cf1d78714ff4": buckbumble_unpack,
+
+    # Buck Bumble (E) (M5) [!]
+    "3ac266d98a84f01174ad7ffbb532f3e3bc041a57ebc8874c0b45bb062899a6db": buckbumble_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
