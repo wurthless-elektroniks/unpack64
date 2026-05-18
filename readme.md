@@ -84,13 +84,10 @@ So, to save ROM and RAM space, programmers used some combination of the followin
   Nintendo experimented with this for 1080 Snowboarding and the Zelda games.
 
 And we can't forget to mention the games that insist on using virtual memory! Games
-will set up the TLB to map chunks of RDRAM in a virtual memory space for reasons I
-can't really imagine, because it carries a performance penalty on a console that was
-already famously hobbled by the slow RDRAM. While games like Perfect Dark probably
-had a valid use case (swapping various resources from RDRAM when the Expansion Pak is
-not installed), Acclaim and others used it for no apparent reason. ~~~I'm still scratching
-my head on that one.~~~ Turns out that, for Acclaim, it's a similar reason, and it's standard
-on all of their games that support the Expansion Pak.
+will use virtual memory to fake there being more space for code than there actually is.
+The typical implementation swaps 4kbyte pages to a cache in memory, then sets the TLB
+to point at those pages, relying on the TLB miss exception to swap pages in as appropriate.
+Acclaim were the worst offenders with virtual memory, but Factor 5 and Rareware also used the TLB.
 
 Even someone who can't understand all of that technobabble can guess that this all makes
 disassembling N64 games a real pain, to the point where half of the N64 romhacking
@@ -102,7 +99,7 @@ Nobody is that much of an insane idiot to do that, anyways. Except for me, of co
 
 Dynamically loaded and relocatable code segments:
 
-- 1080 Snowboarding
+- 1080 Snowboarding (uses full DLL implementation with imports and exports)
 - Beetle Adventure Racing!
 - Dobutsu no Mori / Animal Forest (uses the Zelda framework)
 - Duck Dodgers Starring Daffy Duck
@@ -112,12 +109,21 @@ Dynamically loaded and relocatable code segments:
 - Zelda: Ocarina of Time
 - Zelda: Majora's Mask
 
-Using the TLB and a heap to cache chunks of program code in RAM to save memory:
+Games using virtual memory:
 
+- All-Star Baseball 2000
+- All-Star Baseball 2001
 - Armorines: Project S.W.A.R.M.
-- Indiana Jones and the Infernal Machine (Factor 5)
+- GoldenEye 007
+- Indiana Jones and the Infernal Machine
+- Jeremy McGrath Supercross 2000
+- NBA Jam 2000
+- NFL Quarterback Club 99
+- NFL Quarterback Club 2000
+- NFL Quarterback Club 2001
 - Perfect Dark
-- Star Wars Episode 1: Battle for Naboo (Factor 5)
+- Re-Volt
+- Star Wars Episode 1: Battle for Naboo
 - South Park
 - South Park: Chef's Luv Shack
 - Turok 2: Seeds of Evil
@@ -130,12 +136,24 @@ Serious boot executable abuse:
   code is completely unloaded afterwards.
 
 Expansion Pak games that don't officially support the Expansion Pak:
+
 - 1080 Snowboarding: Allocates extra heap space when extra memory is present.
   Presumably allows for more resources to be loaded into memory so that they
   don't have to be swapped out later.
 
 - South Park: Chef's Luv Shack: Uses Acclaim's contemporary framework and one-shot
   loads overlays if the Expansion Pak is present. 
+
+## What does all of this mean for decomp projects?
+
+Probably not much. Most decomp projects are already far enough along so this project won't
+add much value to them. For decomp projects just starting out, maybe it'll be of some use,
+but many of the unpackers are still a work in progress, and others might never be completed.
+
+## Will this thing ever be able to unpack game resources (not just code)?
+
+Not sure, it'd take a hell of a refactor to support that, and it would also mean supporting
+a lot more compression algorithms. I just want to patch games, not do total conversions...
 
 ## License
 
