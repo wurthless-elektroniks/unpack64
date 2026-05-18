@@ -32,6 +32,7 @@ from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
+from .shiren import shiren_unpack
 from .slugfest import slugfest_unpack
 from .titus import superman_unpack
 from .tt import ts2_unpack
@@ -953,6 +954,13 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Kakutou Denshou - F-Cup Maniax (J) [!]
     "aa4b4f7528a8f465ef0152652f86888790b6ab0ec0fdced22e349885afcdff64": simcity_unpack,
+
+    # ------------------------------------------------------
+    # Shiren the Wanderer 2
+    # ------------------------------------------------------
+
+    # Fushigi no Dungeon - Fuurai no Shiren 2 - Oni Shuurai! Shiren Jou! (J) [!]
+    "4073a9f6516ef5d15cdd8b259a952a7d07633a2815f2a738fb5d98415d30a458": shiren_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
