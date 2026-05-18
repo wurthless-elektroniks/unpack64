@@ -14,8 +14,22 @@ From https://hack64.net/wiki/doku.php?id=extreme_g:rom_map, the header is
     - u32 source size
 
 For Extreme-G, this stub is loaded to 0x8004b8a0 (in rom at 0x14A0).
-'''
 
+Extreme-G also uses overlays, but the way the game actually bootstraps is as follows.
+Remember that all notes are for Extreme-G (US).
+
+The resource table is loaded with the unpacker stub at 0x8004b648. The problem is that
+this pointer is never passed to the bootexe, because the bootexe hardcodes
+random pointers to that table in its code.
+
+The main code overlay is LZH compressed, and lives in ROM at 0x2f480 (pointed to by 0x8004b898).
+The load address is 0x8009b898 (right after the OS segment).
+When looking at the LZH payload, it's 4 bytes compressed size followed by the data.
+
+LZH decompression is so slow that the game will mask the loading time by displaying the copyright
+text first, then decompressing the main segment.
+This simulates a natural "you must read the copyright info" condition that a lot of games have.
+'''
 
 import logging
 import struct
@@ -115,6 +129,60 @@ XG2_UNPACKER_PATTERN = SignatureBuilder() \
     .const_op32_lo16("payload_address", 0x58) \
     .build()
 
+EXTREMEG_MAIN_OVERLAY_LOADER_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xb0,     # addiu      sp,sp,-0x50
+        0xaf, 0xb2, 0x00, 0x48,     # sw         s2,local_8(sp)
+        0x00, 0x80, 0x90, 0x21,     # move       s2,a0
+        0xaf, 0xb1, 0x00, 0x44,     # sw         s1,local_c(sp)
+        0x00, 0xa0, 0x88, 0x21,     # move       s1,a1
+        0x02, 0x20, 0x20, 0x21,     # move       a0,s1
+        0x24, 0x05, 0x00, 0x10,     # li         a1,0x10
+        0xaf, 0xbf, 0x00, 0x4c,     # sw         ra,local_4(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD,    #  jal  cache_clear_thing
+        0xaf, 0xb0, 0x00, 0x40,     # _sw        s0,local_10(sp)
+    ]) \
+    .build()
+
+def _extremeg_dump_resource_table(rom: N64Rom,
+                                  resource_table_address: int):
+    
+    num_entries = struct.unpack(">I", rom.read_bytes(resource_table_address, 4))[0]
+
+    logger.info("walking resource table, %d entries...", num_entries)
+
+    table_read_address = resource_table_address + 8
+
+    resources = []
+    for i in range(num_entries):
+        offset, packing, uncompressed_size, compressed_size = struct.unpack(">IIII", rom.read_bytes(table_read_address + (i*0x10), 0x10))
+
+        if packing == 0x434F5059:
+            # 'COPY'. game supports uncompressed resources in this table,
+            # but that's a development leftover. we support it anyway
+
+            resource = rom.read_bytes(resource_table_address + offset, uncompressed_size)
+            resources.append(resource)
+        
+        elif packing == 0x4C5A5353:
+            # 'LZSS'
+
+            resource = rom.read_bytes(resource_table_address + offset, compressed_size)
+
+            resource = lzss_decompress(resource)
+            if len(resource) != uncompressed_size:
+                logger.warning("LZSS size mismatch, expect %d got %d", uncompressed_size, len(resource))
+            
+            resources.append(resource)
+            
+        elif packing == 0x4C485546:
+            # 'LHUF'. LZH compressed resources.
+            # xg1 will check for this but not use it.
+            # xg2 though will have LZH compressed resources in the table.
+            logger.warning("skipping LZH resource %d (lzh not supported yet)", i)
+            resources.append(None)
+
+    return resources
 
 def extremeg_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -154,12 +222,23 @@ def extremeg_unpack(rom: N64Rom, ipc: int) -> Bffi:
         logger.error("real preamble was not recognized")
         return None
     
+    # xg2 is different, so this is left out for now
+    # load_overlay_offset = EXTREMEG_MAIN_OVERLAY_LOADER_PATTERN.find(uncompressed_data)
+    # if load_overlay_offset is None:
+    #     logger.error("cannot find main overlay load routine")
+    #     return None
+
     builder = BffiBuilder()
     builder.initial_program_counter(real_preamble.crt_entry_point())
     builder.initial_stack_pointer(real_preamble.initial_stack_pointer())
     for bss_start, bss_end in real_preamble.bss_sections():
         builder.bss(bss_start, bss_end-bss_start)
 
+    # boot stub must remain in memory because main code will refer back to it
+    # for addresses to resources, overlays, etc.
+    bootstub = rom.boot_exe()[:payload_address-ipc]
+
+    builder.fix(ipc, bootstub)
     builder.fix(payload_address, uncompressed_data)
 
     return builder.build()
