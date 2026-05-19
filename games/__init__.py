@@ -33,6 +33,7 @@ from .rare import bk_unpack, blastcorps_unpack, dk64_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .shiren import shiren_unpack
+from .sote import sote_unpack
 from .slugfest import slugfest_unpack
 from .titus import superman_unpack
 from .tt import ts2_unpack
@@ -961,6 +962,26 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Fushigi no Dungeon - Fuurai no Shiren 2 - Oni Shuurai! Shiren Jou! (J) [!]
     "4073a9f6516ef5d15cdd8b259a952a7d07633a2815f2a738fb5d98415d30a458": shiren_unpack,
+
+
+    # ------------------------------------------------------
+    # Star Wars - Shadows of the Empire (long overdue)
+    # ------------------------------------------------------
+
+    # Star Wars - Shadows of the Empire (U) (V1.0) [!]
+    "f916ff87a7ad3217ca26697607dc48d30f187edb797dc1535e1095edffdb0ff6": sote_unpack,
+
+    # Star Wars - Shadows of the Empire (U) (V1.1) [!]
+    "895d3dbbdc4945b690ef80f6dff8e5c95b5e3ab9fb3d9b62b5a8e9c61110a0e9": sote_unpack,
+
+    # Star Wars - Shadows of the Empire (U) (V1.2) [!]
+    "e7085e013123537f34e0edec8801318016da4dbac424172d6dc5f3b67d98642c": sote_unpack,
+
+    # Star Wars - Teikoku no Kage (J) [!]
+    "ed01f66646360a645f8c283d9d887504f662dc741758cbe3a865c8dc85c8d52f": sote_unpack,
+
+    # Star Wars - Shadows of the Empire (E) [!]
+    "e9a7566a699e2c885d3cf86eb366f9fcd36e06a68f1ca0419700bbec44e3eacb": sote_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
