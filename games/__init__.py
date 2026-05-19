@@ -12,7 +12,7 @@ from .ea import nhl99_unpack, nbalive2k_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
-from .extremeg import extremeg_unpack
+from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
@@ -210,13 +210,13 @@ GAME_SPECIFIC_UNPACKERS = {
     "45cfbf079b7c5777ee47f3b86c643eeeb406acb2a84c95ec4ab2b5e2d754107b": extremeg_unpack,
 
     # Extreme-G XG2 (U) [!]
-    "0b5d9904cf45a92396396308506da0ae258afe44a902c96e50d0ff4969c67500": extremeg_unpack,
+    "0b5d9904cf45a92396396308506da0ae258afe44a902c96e50d0ff4969c67500": xg2_unpack,
 
     # Extreme-G XG2 (J) [!]
-    "5004c79552feb976b72aec4fa3e3eba2e19f7e7b6233be58acee9f7b7fb75cbe": extremeg_unpack,
+    "5004c79552feb976b72aec4fa3e3eba2e19f7e7b6233be58acee9f7b7fb75cbe": xg2_unpack,
 
     # Extreme-G XG2 (E) (M5) [!]
-    "de1deae125b6f17048cb240132dbfe918b8fec61fe2ed1fe8e5a2e03995211b3": extremeg_unpack,
+    "de1deae125b6f17048cb240132dbfe918b8fec61fe2ed1fe8e5a2e03995211b3": xg2_unpack,
 
     # ------------------------------------------------------
     # Rareware DEFLATE-based unpacker (zlib or gzip)
