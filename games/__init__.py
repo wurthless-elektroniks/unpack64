@@ -30,6 +30,7 @@ from .mspacman import mspacman_unpack
 from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack
+from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .shiren import shiren_unpack
@@ -963,7 +964,6 @@ GAME_SPECIFIC_UNPACKERS = {
     # Fushigi no Dungeon - Fuurai no Shiren 2 - Oni Shuurai! Shiren Jou! (J) [!]
     "4073a9f6516ef5d15cdd8b259a952a7d07633a2815f2a738fb5d98415d30a458": shiren_unpack,
 
-
     # ------------------------------------------------------
     # Star Wars - Shadows of the Empire (long overdue)
     # ------------------------------------------------------
@@ -982,6 +982,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Star Wars - Shadows of the Empire (E) [!]
     "e9a7566a699e2c885d3cf86eb366f9fcd36e06a68f1ca0419700bbec44e3eacb": sote_unpack,
+
+    # ------------------------------------------------------
+    # Resident Evil 2
+    # ------------------------------------------------------
+
+    # Resident Evil 2 (U) (V1.1) [!]
+    "71f3f779613bf1f0e2050bfa600425385d2c257a647d2e40f63be1a7986e9aac": re2_unpack,
+
+    # Biohazard 2 (J) [!]
+    "f64a3c4a3873cf145e577ee710366fd638bb8d03f6f01549f81e04df738fd425": re2_unpack,
+
+    # Resident Evil 2 (E) (M2) [!]
+    "52093e994c89848b17c8e6f26546d66374cf47c9b471ec15da7f322b7ee17ab8": re2_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
