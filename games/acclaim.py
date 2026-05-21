@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 # Later in the boot, 0x0C6000-0x103800 is loaded somewhere in high memory
 # (0x80780000 with expansion pak) and then TLB entry 0 will point 0x00400000-0x0047FFFF to it.
 #
+# Turok Rage Wars is the same but uses a 1mb page for the swap segment.
+#
 # ----------------------------------------------------------------------
 
 ARMORINES_SYSTEMBOOT_CHECK_PATTERN = SignatureBuilder() \
@@ -152,33 +154,53 @@ def armorines_unpack(rom: N64Rom, ipc: int) -> Bffi:
     main_segment_rom_address = consts["main_segment_rom_address"].get_value() & 0x03FFFFFF
 
     loadmap_mainseg_offset = ARMORINES_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.find( bootexe, main_segment_setup_offset)
-    if loadmap_mainseg_offset is None:
-        logger.error("can't find segment load and TLB map setup")
-        return None
-    consts = ARMORINES_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.consts(ipc, bootexe, loadmap_mainseg_offset)
-    main_segment_size = consts["main_segment_size"].get_value() & 0x03FFFFFF
+    if loadmap_mainseg_offset is not None:
+        logger.info("game uses 512k pages for the swap segment")
+
+        consts = ARMORINES_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.consts(ipc, bootexe, loadmap_mainseg_offset)
+        main_segment_size = consts["main_segment_size"].get_value() & 0x03FFFFFF
+        
+        swap_pagemask     = 0x07e000
+        swap_load_address = 0x780000
+    else:
+        loadmap_mainseg_offset = TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.find( bootexe, main_segment_setup_offset)
+        if loadmap_mainseg_offset is None:
+            logger.error("can't find segment load and TLB map setup")
+            return None
+        
+        logger.info("game uses 1M pages for the swap segment")
+
+        consts = TUROK3_LOAD_AND_MAP_MAIN_SEGMENT_PATTERN.consts(ipc, bootexe, loadmap_mainseg_offset)
+        main_segment_size = consts["main_segment_size"].get_value() & 0x03FFFFFF
+        
+        swap_pagemask     = 0x1fe000
+        swap_load_address = 0x700000
 
     logger.info("main segment in ROM at 0x%08x-0x%08x",
-                main_segment_rom_address,
-                main_segment_rom_address+main_segment_size)
+                    main_segment_rom_address,
+                    main_segment_rom_address+main_segment_size)
 
     main_segment = rom.read_bytes(main_segment_rom_address, main_segment_size)
 
-    # we will load this segment to 0x80380000
     tlb_0 = BffiTlbEntry()
-    tlb_0.pagemask(0x07e000)
+    tlb_0.pagemask(swap_pagemask)
     tlb_0.entryhi(0x00400000)
-    tlb_0.entrylo0( tlb_pack_entrylo(0x00380000, 0x1F) )
-    tlb_0.entrylo1( tlb_pack_entrylo(0x003C0000, 0x1F) )
+
+    if swap_pagemask == 0x07e000:
+        tlb_0.entrylo0( tlb_pack_entrylo(swap_load_address, 0x1F) )
+        tlb_0.entrylo1( tlb_pack_entrylo(swap_load_address + 0x040000, 0x1F) )
+    elif swap_pagemask == 0x1fe000:
+        tlb_0.entrylo0( tlb_pack_entrylo(swap_load_address, 0x1F) )
+        tlb_0.entrylo1( 1 )
+
     tlb.entry(0, tlb_0)
 
-    if tlb.virtual_to_physical(0x00400000) != 0x00380000 or \
-       tlb.virtual_to_physical(0x00440000) != 0x003C0000:
-        raise RuntimeError("TLB mapping is incorrect, report bug. "
-                           f"{tlb.virtual_to_physical(0x00400000):08x} "
-                           f"{tlb.virtual_to_physical(0x00440000):08x} ")
-
-    logger.info("will map 0x80380000-0x803FFFFF to 0x00400000 for the main segment")
+    if swap_pagemask == 0x07e000:
+        if tlb.virtual_to_physical(0x00400000) != 0x00380000 or \
+        tlb.virtual_to_physical(0x00440000) != 0x003C0000:
+            raise RuntimeError("TLB mapping is incorrect, report bug. "
+                            f"{tlb.virtual_to_physical(0x00400000):08x} "
+                            f"{tlb.virtual_to_physical(0x00440000):08x} ")
 
     builder = BffiBuilder()
     builder.initial_tlb(tlb)
@@ -630,6 +652,144 @@ def revolt_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.required_memory_size(8)
     builder.initial_tlb(tlb)
     builder.bss(bss_start, bss_size)
+    builder.fix(ipc, bootexe)
+    builder.fix(0x00200000, swap)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    return builder.build()
+
+# ------------------------------------------------------------------------------------------
+#
+# Shadow Man
+#
+# Bootexe uncompressed.
+# BSS clear range in preamble is lying; entry point clears full BSS range.
+# Swap segment at 0x1DEFBE0, swapped in on 4 MB systems, loaded to 0x80600000 on 8 MB systems.
+#
+# ------------------------------------------------------------------------------------------
+
+SHADOWMAN_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xe8,         # +0x00 addiu      sp,sp,-0x18
+        0xaf, 0xbf, 0x00, 0x10,         # +0x04 sw         ra,local_8(sp)
+        0x3c, 0x02, 0x00, WILDCARD,     # +0x08 lui        v0,0x5  <-- BSS start (OR with 0x80000000)
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x0C addiu      v0,v0,-0x5bc0
+        0x3c, 0x03, 0x80, 0x00,         # +0x10 lui        v1,0x8000
+        0x00, 0x43, 0x20, 0x25,         # +0x14 or         a0,v0,v1
+        0x3c, 0x02, 0x00, WILDCARD,     # +0x18 lui        v0,0x3 <-- BSS end
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x1C addiu      v0,v0,0x4280
+        0x10, 0x40, 0x00, 0x07,         # beq        v0,zero,LAB_001030a0
+        0x00, 0x00, 0x18, 0x21,         # _clear     v1
+        0x00, 0x40, 0x28, 0x21,         # move       a1,v0
+        0xac, 0x80, 0x00, 0x00,         # sw         zero,0x0(a0)
+        0x24, 0x63, 0x00, 0x04,         # addiu      v1,v1,0x4
+        0x00, 0x65, 0x10, 0x2b,         # sltu       v0,v1,a1
+        0x14, 0x40, 0xff, 0xfc,         # bne        v0,zero,LAB_0010308c
+        0x24, 0x84, 0x00, 0x04,         # _addiu     a0,a0,0x4
+    ]) \
+    .const_op32_hi16("bss_start_phys_address", 0x08) \
+    .const_op32_lo16("bss_start_phys_address", 0x0C) \
+    .const_op32_hi16("bss_size", 0x18) \
+    .const_op32_lo16("bss_size", 0x1C) \
+    .build()
+
+SHADOWMAN_SWAP_INIT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0xb0, WILDCARD,         # +0x00 lui        v0,0xb1df
+        0x24, 0x45, WILDCARD, WILDCARD,     # +0x04 addiu      a1,v0,-0x420
+        0x3c, 0x02, 0xb0, WILDCARD,         # +0x08 lui        v0,0xb1ed
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x0C addiu      v0,v0,-0x630
+        0x00, 0x45, 0x10, 0x23,             # subu       v0,v0,a1
+        0x24, 0x42, 0xff, 0xff,             # addiu      v0,v0,-0x1
+        0x00, 0x02, 0x13, 0x02,             # srl        v0,v0,0xc
+        0xa6, 0x02, WILDCARD, WILDCARD,     # sh         v0,0x1602(s0)
+        0x3c, 0x02, 0x80, 0x00,             # lui        v0,0x8000
+        0x8c, 0x43, 0x03, 0x18,             # lw         v1,offset DAT_80000318(v0)
+        0x26, 0x62, 0x00, 0x08,             # addiu      v0,s3,0x8
+        0xae, 0x05, WILDCARD, WILDCARD,     # sw         a1,0x1608(s0)
+        0xae, 0x02, WILDCARD, WILDCARD,     # sw         v0,0x160c(s0)
+        0xae, 0x00, WILDCARD, WILDCARD,     # sw         zero,0x1604(s0)
+        0x00, 0x83, 0x20, 0x2b,             # sltu       a0,a0,v1
+        0x10, 0x80, 0x00, 0x12,             # beq        a0,zero,LAB_00106648
+        0xae, 0x00, WILDCARD, WILDCARD,     # _sw        zero,0x15fc(s0)=>DAT_8004ca1c
+        0x00, 0xa0, 0x20, 0x21,             # move       a0,a1
+        0x96, 0x06, WILDCARD, WILDCARD,     # lhu        a2,0x1602(s0)=>DAT_8004ca22
+        0x3c, 0x05, 0x80, 0x60,             # lui        a1,0x8060
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        FUN_001062cc
+        0x00, 0x06, 0x33, 0x00,             # _sll       a2,a2,0xc
+        0x00, 0x00, 0x20, 0x21,             # clear      a0
+        0x3c, 0x05, 0x00, 0x1f,             # lui        a1,0x1f
+        0x34, 0xa5, 0xe0, 0x00,             # ori        a1,a1,0xe000
+        0x3c, 0x06, 0x00, 0x20,             # lui        a2,0x20
+        0x24, 0x02, 0xff, 0xff,             # li         v0,-0x1
+        0xaf, 0xa2, 0x00, 0x10,             # sw         v0,local_20(sp)
+        0x24, 0x02, 0x00, 0x07,             # li         v0,0x7
+        0x3c, 0x07, 0x00, 0x60,             # lui        a3,0x60
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        tlb_map_page
+        0xaf, 0xa2, 0x00, 0x14,             # _sw        v0,local_1c(sp)
+    ]) \
+    .modify_andmask(0x02,bytes([0xF0])) \
+    .modify_andmask(0x0A,bytes([0xF0])) \
+    .const_op32_hi16("swap_rom_start_address", 0x00) \
+    .const_op32_lo16("swap_rom_start_address", 0x04) \
+    .const_op32_hi16("swap_rom_end_address", 0x08) \
+    .const_op32_lo16("swap_rom_end_address", 0x0C) \
+    .build()
+
+def shadowman_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    tlb, preamble = tlb_try_detect_preamble(rom, ipc)
+    if None in [ tlb, preamble ]:
+        return None
+    
+    entry_point_phys = tlb.virtual_to_physical(preamble.crt_entry_point())
+    if entry_point_phys is None:
+        logger.error("entry point in unmapped TLB space!!")
+        return None
+    entry_point_phys += 0x80000000
+
+    bootexe = rom.boot_exe()
+
+    if SHADOWMAN_ENTRY_POINT_PATTERN.compare(bootexe, entry_point_phys-ipc) is False:
+        return None
+    
+    logger.info("found Shadow Man BSS clear at entry point")
+
+    consts = SHADOWMAN_ENTRY_POINT_PATTERN.consts(ipc, bootexe, entry_point_phys-ipc)
+    bss_start_phys_address = consts["bss_start_phys_address"].get_value() + 0x80000000
+    bss_size = consts["bss_size"].get_value()
+
+    bootexe = bootexe[:bss_start_phys_address-ipc]
+    logger.info("BSS: 0x%08x-0x%08x",
+                bss_start_phys_address,
+                bss_start_phys_address + bss_size)
+    
+    swap_init_offset = SHADOWMAN_SWAP_INIT_PATTERN.find(bootexe)
+    if swap_init_offset is None:
+        logger.error("could not find swap init")
+        return None
+    
+    consts = SHADOWMAN_SWAP_INIT_PATTERN.consts(ipc, bootexe, swap_init_offset)
+    swap_rom_start_address = consts["swap_rom_start_address"].get_value() & 0x03FFFFFF
+    swap_rom_end_address   = consts["swap_rom_end_address"].get_value() & 0x03FFFFFF
+
+    logger.info("swap segment in ROM at 0x%08x-0x%08x, maps to 0x00200000",
+                swap_rom_start_address,
+                swap_rom_end_address)
+    
+    swap = rom.read_bytes(swap_rom_start_address, swap_rom_end_address-swap_rom_start_address)
+
+    entry00 = BffiTlbEntry()
+    entry00.pagemask(0x1fe000)
+    entry00.entryhi(0x00200000)
+    entry00.entrylo0( tlb_pack_entrylo(0x00600000, 0x1F) )
+    entry00.entrylo1(1)
+    tlb.entry(0, entry00)
+
+    builder = BffiBuilder()
+    builder.required_memory_size(8)
+    builder.initial_tlb(tlb)
+    builder.bss(bss_start_phys_address, bss_size)
     builder.fix(ipc, bootexe)
     builder.fix(0x00200000, swap)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())

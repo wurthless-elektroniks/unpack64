@@ -2,7 +2,8 @@
 Game-specific unpacker drivers.
 '''
 
-from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack
+from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack, \
+                     shadowman_unpack
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .buckbumble import buckbumble_unpack
@@ -783,6 +784,15 @@ GAME_SPECIFIC_UNPACKERS = {
     # Violence Killer - Turok New Generation (J) [b1]
     "78eada162ac94ffef6ab1fcd0aefeef01c69151d1b5c1abf6ebe74e56aa96077": armorines_unpack,
 
+    # Turok - Rage Wars (U) [!]
+    "0433043aaba2649bdd1fe717c4020550ac663c0362527aa082490f5977a3e46b": armorines_unpack,
+
+    # Turok - Rage Wars (E) [!]
+    "d763cbbe485a5f9e1b7be97d5ac16735087e23d0bb62c05dc844e01b7e1156d1": armorines_unpack,
+
+    # Turok - Legenden des Verlorenen Landes (G) [!]
+    "9dc401252bacb2ad7412ef003f97f28cb225d76b3cc76f430fbc27fa05067ca8": armorines_unpack,
+
     # South Park (U) [!]
     "68e87dbae05414026a126cb6e0c632e7660668a0003e1e1c975df8296e2a36a6": southpark_unpack,
 
@@ -803,6 +813,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Re-Volt (E) (M4) [!]
     "ce619ae064bc608d9a139f95e6bbc9f17fe3898d242943bc92fd0d6fc74915b0": revolt_unpack,
+
+    # Shadow Man (U) [!]
+    "da1a8af84f16ff385271704ca31673b0aa2343f40bc9cd95eac0bdf20676ca27": shadowman_unpack,
+
+    # Shadow Man (E) (M3) [!]
+    "322603e871ebf8556c565f291bb3642d42fbd27bcda03e7c0ecf4d2aec86a5a7": shadowman_unpack,
+
+    # Shadow Man (F) [!]
+    "4b38312c467b825ee0472746fe572a13d5520e8db3638299ae33c98110bc72e0": shadowman_unpack,
+
+    # Shadow Man (G) [!]
+    "6efd99af685a32105ddbc0b0193af38a0ce8d262c4921e0ddeec68e49b6921ce": shadowman_unpack,
+
 
     # ------------------------------------------------------
     # Seta
