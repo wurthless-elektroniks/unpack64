@@ -14,7 +14,9 @@ def _copyn(input: bytes,
            run_length: int):
 
     while run_length > 0:
-        output[output_pointer] = input[input_pointer]
+        byte_in = input[input_pointer] if input_pointer < len(input) else 0
+        output[output_pointer] = byte_in
+
         input_pointer += 1
         output_pointer += 1
         run_length -= 1
@@ -43,12 +45,16 @@ def refpack_decompress(input: bytes):
     third = 0
     fourth = 0
 
-    while True:
+    # HACK: WCW Mayhem game.ovl tries to read past the end of file
+    # so abort if that happens
+    while input_pointer < len(input):
         backseek_pointer = 0
         run_length = 0 # "run" in original source
 
         first = input[input_pointer]
         if (first & 0x80) == 0:
+            if (input_pointer + 1) >= len(input):
+                break
             second = input[input_pointer + 1]
             input_pointer += 2
 
@@ -103,6 +109,9 @@ def refpack_decompress(input: bytes):
             continue
 
         if (first & 0x20) == 0:
+            if (input_pointer+4) >= len(input):
+                break
+
             second = input[input_pointer + 1]
             third  = input[input_pointer + 2]
             fourth = input[input_pointer + 3]

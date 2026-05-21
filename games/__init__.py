@@ -9,7 +9,7 @@ from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .buckbumble import buckbumble_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
-from .ea import nhl99_unpack, nbalive2k_unpack
+from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -756,6 +756,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # NBA Live 99 (E) (M5) [!]
     "f21ddf33f8e597a0b49e1dde2b0d9cf55d2b8fd007cf20a92996a0783f7de411": nbalive2k_unpack,
+
+    # WCW Mayhem (U) [!]
+    "45acaf7b9d36436d73aef1ddc130b48ad115e5c8a3a4efafedf621afaddc2edf": wcw_unpack,
+
+    # WCW Mayhem (E) [!]
+    "d8c97d05f5050636a5756ddac73d1983ab636544f996a6a5d3dd5d15a14339b2": wcw_unpack,
+
+    # WCW Backstage Assault (U) [!]
+    "cf4169a5489d25711fb94e6c716ab5bf00b9aaf742556f5142998e20bffce7e7": wcw_unpack,
 
     # ------------------------------------------------------
     # Acclaim games using TLB but no packing

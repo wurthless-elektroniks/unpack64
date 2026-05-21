@@ -11,10 +11,39 @@ from bffi import Bffi,BffiBuilder,BffiSectionType
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
-
+from strutil import extract_cstring
 
 logger = logging.getLogger(__name__)
 
+# Main reference: https://chipgw.com/2014/12/19/the-big-file-format/
+def bigf_read_filesystem(input_buffer: bytes):
+    if input_buffer[:4] != b'BIGF':
+        logger.error("not a BIGF file: %s", input_buffer[:4])
+        return None
+    
+    _, filesize, num_entries, header_end_offset = struct.unpack(">IIII", input_buffer[:16])
+
+    read_offset = 0x10
+ 
+    input_buffer = input_buffer[:filesize]
+
+    contents = {}
+    for _ in range(num_entries):
+        filedat_offset, filedat_size = struct.unpack(">II", input_buffer[read_offset:read_offset+0x08])
+        filename = extract_cstring(input_buffer[read_offset+8:])
+        read_offset += (8 + (len(filename) + 1))
+
+        data = input_buffer[filedat_offset:filedat_offset+filedat_size]
+        magic = struct.unpack(">H", data[0:2])[0]
+        logger.warning("bigf file: %s @ 0x%08x (%d bytes)", filename, filedat_offset, filedat_size)
+        
+        if (magic & 0x3EFF) == 0x10FB:
+            logger.warning("file %s refpacked, decompressing it", filename)
+            data = refpack_decompress(data)
+
+        contents[filename] = data
+    
+    return contents
 
 # ----------------------------------------------------------
 #
@@ -295,4 +324,173 @@ def nbalive2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # The main segment does not use BSS, it instead relies on IPL3 loading in
 # a bunch of zeroes to do BSS clearing.
 #
+# These games load overlays the same:
+# - loaded.ovr is the common segment that stays loaded at all times.
+# - fe.ovr (frontend/menus) and game.ovr are swapped out to the same address
+#   range as necessary.
+#
 # ----------------------------------------------------------
+
+# excuse this very long string of crap, it's how the game loads
+WCW_MAIN_OVERLAY_INIT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd0,         # +0x00 addiu      sp,sp,-0x30
+        0x24, 0x02, 0x02, 0x00,         # +0x04 li         v0,0x200
+        0x3c, 0x01, 0x80, WILDCARD,     # +0x08 lui        at,0x8004
+        0xac, 0x22, WILDCARD, WILDCARD, # +0x0C sw         v0,-0x46fc(at)
+        0x24, 0x02, 0x00, 0xf0,         # +0x10 li         v0,0xf0
+        0x3c, 0x01, 0x80, WILDCARD,     # +0x14 lui        at,0x8004
+        0xac, 0x22, WILDCARD, WILDCARD, # +0x18 sw         v0,-0x46f8(at)
+        0x24, 0x02, 0x01, 0x00,         # +0x1C li         v0,0x100
+        0x3c, 0x01, 0x80, WILDCARD,     # +0x20 lui        at,0x8004
+        0xac, 0x22, WILDCARD, WILDCARD, # +0x24 sw         v0,-0x467c(at)
+        0x24, 0x02, 0x00, 0x78,         # +0x28 li         v0,0x78
+        0x3c, 0x01, 0x80, WILDCARD,     # +0x2C lui        at,0x8004
+        0xac, 0x22, WILDCARD, WILDCARD, # +0x30 sw         v0,-0x4678(at)
+        0x24, 0x02, 0x00, 0x10,         # +0x34 li         v0,0x10
+        0x3c, 0x01, 0x80, WILDCARD,     # +0x38 lui        at,0x8004
+        0xac, 0x22, WILDCARD, WILDCARD, # +0x3C sw         v0,-0x4688(at)
+        0x3c, 0x02, 0xb0, WILDCARD,     # +0x40 lui        v0,0xb019 <-- BIGF ROM address
+        0x24, 0x42, WILDCARD, WILDCARD, # +0x44 addiu      v0,v0,-0x3e40
+    ]) \
+    .tail_pattern([
+        # skipping ahead +0xB0
+        0x3c, 0x04, 0x80, WILDCARD,         # +0xB0 lui        a0,0x8004
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0xB4 addiu      a0,a0,-0x15b8 <-- should point to "loaded.ovr" string
+        0x24, 0x05, 0x00, 0x10,             # +0xB8 li         a1,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xBC jal        malloc_from_file?
+        0x27, 0xa6, 0x00, 0x18,             # +0xC0 _addiu     a2,sp,0x18
+        0x3c, 0x11, 0x80, WILDCARD,         # +0xC4 lui        s1,0x8005 <-- loaded.ovr load address
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0xC8 addiu      s1,s1,-0xf40
+        0x02, 0x20, 0x20, 0x21,             # +0xCC move       a0,s1
+        0x8f, 0xa6, 0x00, 0x18,             # +0xD0 lw         a2=>local_18,0x18(sp)
+        0x00, 0x40, 0x80, 0x21,             # +0xD4 move       s0,v0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xD8 jal        memcpy?
+        0x02, 0x00, 0x28, 0x21,             # +0xDC _move      a1,s0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xE0 jal        free? 
+        0x02, 0x00, 0x20, 0x21,             # +0xE4 _move      a0,s0
+        0x8f, 0xa5, 0x00, 0x18,             # +0xE8 lw         a1,local_18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xEC jal        FUN_80011500
+        0x02, 0x20, 0x20, 0x21,             # +0xF0 _move      a0,s1
+        0x8f, 0xa5, 0x00, 0x18,             # +0xF4 lw         a1,local_18(sp)
+        0x3c, 0x04, 0x80, WILDCARD,         # +0xF8 lui        a0,0x8010
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0xFC addiu      a0,a0,0x4c80
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x100 jal        FUN_80011440
+        0x00, 0x00, 0x00, 0x00,             # +0x104 _nop
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x108 lui        a0,0x8004
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x10C addiu      a0,a0,-0x15c0 <-- should point to "fe.ovr" string
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x110 jal        load_generic_overlay?
+        0x00, 0x00, 0x00, 0x00,             # +0x114 _nop
+    ]) \
+    .size(0x118) \
+    .const_op32_hi16("bigf_rom_address", 0x40) \
+    .const_op32_lo16("bigf_rom_address", 0x44) \
+    .const_op32_hi16("loadedovr_string_address", 0xB0) \
+    .const_op32_lo16("loadedovr_string_address", 0xB4) \
+    .const_op32_hi16("loadedovr_load_address", 0xC4) \
+    .const_op32_lo16("loadedovr_load_address", 0xC8) \
+    .const_op32_hi16("feovr_string_address", 0x108) \
+    .const_op32_lo16("feovr_string_address", 0x10C) \
+    .xref_j_imm26("load_generic_overlay", 0x110) \
+    .build()
+
+WCW_LOAD_GENERIC_OVERLAY_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xd8,             # +0x00 addiu      sp,sp,-0x28
+        0xaf, 0xb2, 0x00, 0x20,             # +0x04 sw         s2,local_8(sp)
+        0x00, 0x80, 0x90, 0x21,             # +0x08 move       s2,a0
+        0xaf, 0xbf, 0x00, 0x24,             # +0x0C sw         ra,local_4(sp)
+        0xaf, 0xb1, 0x00, 0x1c,             # +0x10 sw         s1,local_c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x14 jal        FUN_8000925c
+        0xaf, 0xb0, 0x00, 0x18,             # +0x18 _sw        s0,local_10(sp)
+        0x02, 0x40, 0x20, 0x21,             # +0x1C move       a0,s2
+        0x24, 0x05, 0x00, 0x10,             # +0x20 li         a1,0x10
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x24 jal        FUN_80000868
+        0x27, 0xa6, 0x00, 0x10,             # +0x28 _addiu     a2,sp,0x10
+        0x3c, 0x11, 0x80, WILDCARD,         # +0x2C lui        s1,0x800c <-- load address
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0x30 addiu      s1,s1,-0x6040
+        0x02, 0x20, 0x20, 0x21,             # +0x34 move       a0,s1
+    ]) \
+    .const_op32_hi16("generic_overlay_load_address", 0x2C) \
+    .const_op32_lo16("generic_overlay_load_address", 0x30) \
+    .build()
+
+def wcw_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    # should not have any BSS sections setup yet
+    if preamble.bss_sections():
+        return None
+    
+    bootexe = rom.boot_exe()
+
+    main_overlay_init_offset = WCW_MAIN_OVERLAY_INIT_PATTERN.find(bootexe)
+    if main_overlay_init_offset is None:
+        return None
+    
+    logger.info("found WCW Mayhem/WCW Backstage Assault main overlay init")
+    consts = WCW_MAIN_OVERLAY_INIT_PATTERN.consts(ipc, bootexe, main_overlay_init_offset)
+    xrefs = WCW_MAIN_OVERLAY_INIT_PATTERN.xrefs(ipc, bootexe, main_overlay_init_offset)
+
+    bigf_rom_address = consts["bigf_rom_address"].get_value() & 0x03FFFFFF
+    loadedovr_string_address = consts["loadedovr_string_address"].get_value()
+    loadedovr_load_address = consts["loadedovr_load_address"].get_value()
+    feovr_string_address = consts["feovr_string_address"].get_value()
+    load_generic_overlay = xrefs["load_generic_overlay"].get_address()
+
+    if extract_cstring(bootexe[loadedovr_string_address-ipc:]) != "loaded.ovr":
+        logger.error("game should load its main overlay from loaded.ovr, but it didn't")
+        return None
+    
+    if extract_cstring(bootexe[feovr_string_address-ipc:]) != "fe.ovr":
+        logger.error("game should load its frontend from fe.ovr, but it didn't")
+        return None
+
+    if WCW_LOAD_GENERIC_OVERLAY_PATTERN.compare(bootexe, load_generic_overlay-ipc) is False:
+        logger.error("call to generic overlay loader didn't point to the function we expected. check 0x%08x",
+                     load_generic_overlay)
+        return None
+    consts = WCW_LOAD_GENERIC_OVERLAY_PATTERN.consts(ipc, bootexe, load_generic_overlay-ipc)
+    generic_overlay_load_address = consts["generic_overlay_load_address"].get_value()
+
+    logger.info("loading and unpacking BIGF filesystem...")
+
+    bigf = bigf_read_filesystem(rom.read_bytes_until_end(bigf_rom_address))
+
+    # should have loaded.ovr, fe.ovr and game.ovr
+    for must_exist_fname in [ "loaded.ovr", "fe.ovr", "game.ovr" ]:
+        if must_exist_fname not in bigf:
+            logger.error("%s not found or loaded from bigf", must_exist_fname)
+            return None
+    
+    # since the game relies on a bunch of zeroes to clear BSS,
+    # search backwards from end until we find a block that isn't zeroed
+    bss_backseek_offset = len(bootexe)
+    while True:
+        bss_backseek_offset -= 0x10
+        if bss_backseek_offset < 0:
+            raise RuntimeError("huh? everything was zero")
+        if bootexe[bss_backseek_offset:bss_backseek_offset+0x10] != bytes([0]*0x10):
+            bss_backseek_offset += 0x10
+            break
+    
+    logger.info("will create BSS from 0x%08x to 0x%08x",
+                bss_backseek_offset+ipc,
+                ipc+0x100000)
+    
+    bootexe = bootexe[:bss_backseek_offset]
+
+    builder = BffiBuilder()
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.bss(bss_backseek_offset+ipc, (ipc+0x100000) - (bss_backseek_offset+ipc))
+    builder.fix(ipc, bootexe)
+
+    builder.seg(loadedovr_load_address, bigf["loaded.ovr"])
+    for s in [ "fe.ovr", "game.ovr" ]:
+        builder.seg(generic_overlay_load_address, bigf[s])
+    
+    return builder.build()
+
