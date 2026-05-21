@@ -34,8 +34,9 @@ from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .shiren import shiren_unpack
-from .sote import sote_unpack
 from .slugfest import slugfest_unpack
+from .sote import sote_unpack
+from .sw1racer import sw1racer_unpack
 from .titus import superman_unpack
 from .tt import ts2_unpack
 from .worms import worms_unpack, worms_eu_unpack
@@ -995,6 +996,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Resident Evil 2 (E) (M2) [!]
     "52093e994c89848b17c8e6f26546d66374cf47c9b471ec15da7f322b7ee17ab8": re2_unpack,
+
+    # ------------------------------------------------------
+    # Star Wars Episode 1: Racer
+    # ------------------------------------------------------
+
+    # Star Wars Episode I - Racer (U) [!]
+    "8d6f85683b630e25385619af37197d48279366f6609bb6edc1201ff24c08b757": sw1racer_unpack,
+
+    # Star Wars Episode I - Racer (J) [b1]
+    "c32a78a9b16b48c139bf9dced1358aac411d122aa937d86613abfcd281de027c": sw1racer_unpack,
+
+    # Star Wars Episode I - Racer (E) (M3) [!]
+    "326b810b24cef38b04b74084bfd487fb6d40ea955dc2a54849de942bde076edc": sw1racer_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
