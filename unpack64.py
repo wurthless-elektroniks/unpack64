@@ -3,6 +3,7 @@ import logging
 from argparse import ArgumentParser,RawTextHelpFormatter
 
 from bffi import BffiBuilder, Bffi
+from icacheclr import icacheclr_find_call_count
 from n64rom import load_rom, load_rom_from_zip, N64Rom
 from n64cic import get_cic
 from games import GAME_SPECIFIC_UNPACKERS
@@ -98,6 +99,10 @@ def auto_unpack(rom: N64Rom) -> Bffi:
                      len(code),
                      AUTO_UNPACK_SIZE_THRESHOLD)
         return None
+
+    icacheclr_call_count = icacheclr_find_call_count(code, bootexe_entry_point)
+    if icacheclr_call_count == 1:
+        logger.info("!! This might be a single-load game (osInvalICache() called only once) !!")
 
     logger.info("fix segment is %d byte(s)", len(code))
     bffibuilder.fix(bootexe_entry_point, code)

@@ -1161,7 +1161,8 @@ def preamble_extract_bss_sections_to_bffi(preamble: Preamble, bffibuilder: BffiB
     earliest_bss_address = 0x80800000
 
     for bss_start_address,bss_end_address in preamble.bss_sections():
-        logger.info("bss section: 0x%08x~0x%08x (%d bytes)", bss_start_address, bss_end_address, bss_end_address-bss_start_address)
+        if bffibuilder is not None:
+            logger.info("bss section: 0x%08x~0x%08x (%d bytes)", bss_start_address, bss_end_address, bss_end_address-bss_start_address)
         bss_this_size = bss_end_address-bss_start_address
         
         if bss_this_size == 0:

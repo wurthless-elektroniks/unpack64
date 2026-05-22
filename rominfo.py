@@ -7,6 +7,7 @@ import logging
 
 
 from tlb import tlb_try_detect_preamble
+from icacheclr import icacheclr_find_call_count
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from games import GAME_SPECIFIC_UNPACKERS
 from n64rom import load_rom, load_rom_from_zip
@@ -93,6 +94,12 @@ f"""
 f"        bss: {bss[0]:08x} ~ {bss[1]:08x} ({bss[1]-bss[0]} bytes)")
         print( \
 f"        code: {ipc:08x} ~ {earliest_bss_loc:08x} (ROM 0x001000-0x{(earliest_bss_loc-ipc)+0x1000:06x}) ({earliest_bss_loc-ipc} bytes)")
+        earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, None)
+        bootexe = rom.boot_exe()[:earliest_bss_address-ipc]
+        print( \
+f"""
+        osInvalICache() call count: {icacheclr_find_call_count(bootexe,ipc)}
+""")
 
 
 
