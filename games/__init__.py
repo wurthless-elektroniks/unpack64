@@ -37,6 +37,7 @@ from .seta import shshogi_unpack
 from .shiren import shiren_unpack
 from .slugfest import slugfest_unpack
 from .sote import sote_unpack
+from .sparkrally import sparkrally_unpack
 from .sw1racer import sw1racer_unpack
 from .titus import superman_unpack
 from .tt import ts2_unpack
@@ -1041,6 +1042,16 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Star Wars Episode I - Racer (E) (M3) [!]
     "326b810b24cef38b04b74084bfd487fb6d40ea955dc2a54849de942bde076edc": sw1racer_unpack,
+
+    # ------------------------------------------------------
+    # South Park Rally
+    # ------------------------------------------------------
+
+    # South Park Rally (U) [!]
+    "0e5168c8864f65781f50b83267528350d7f8ee4ffa9d4d3555533edccd656d87": sparkrally_unpack,
+
+    # South Park Rally (E) [!]
+    "20192eac2b4ae2eac5a5eb0f516463a789e6e5a2860411ea7f91f5f46fb9fe0a": sparkrally_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

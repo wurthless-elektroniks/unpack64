@@ -792,7 +792,7 @@ def _ident_alt_libultra_type_4(bootexe: bytearray, ipc: int) -> Preamble | None:
                     0x68)
 
     preamble.add_bss(xrefs["bss_start_address"].get_address(), xrefs["bss_end_address"].get_address())
-    preamble.add_bss(xrefs["bss2_end_address"].get_address(),  xrefs["bss2_end_address"].get_address())
+    preamble.add_bss(xrefs["bss2_start_address"].get_address(),  xrefs["bss2_end_address"].get_address())
     return preamble
 
 # very odd variant from NHL Breakaway 98 which, instead of storing the BSS endpoint,
