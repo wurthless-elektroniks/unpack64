@@ -153,7 +153,7 @@ def slugfest_unpack(rom: N64Rom, ipc: int):
     
     builder = BffiBuilder()
     earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
-    bootexe = rom.boot_exe()[:ipc-earliest_bss_address]
+    bootexe = rom.boot_exe()[:earliest_bss_address-ipc]
 
     builder.fix(ipc, bootexe)
     builder.initial_stack_pointer(preamble.initial_stack_pointer())

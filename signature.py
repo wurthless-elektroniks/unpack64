@@ -435,7 +435,8 @@ class SignatureBuilder():
         return self
     
     def modify_andmask(self, offset: int, patchedmask: bytes):
-        self._andmask[offset:offset+len(patchedmask)] = patchedmask
+        for i, bitmask in enumerate(patchedmask):
+            self._andmask[offset+i] = bitmask
         return self
 
     def andmask(self, andmask: bytes):

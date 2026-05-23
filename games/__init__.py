@@ -30,7 +30,7 @@ from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
 from .mspacman import mspacman_unpack
 from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
-from .rare import bk_unpack, blastcorps_unpack, dk64_unpack
+from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
 from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
@@ -256,6 +256,17 @@ GAME_SPECIFIC_UNPACKERS = {
     # Donkey Kong 64 (E) [!]
     "f704ddc06dda5bee065dd89adcf86aa58bd817684e190094cd0776c0cabba9df": dk64_unpack,
 
+    # Killer Instinct Gold (U) (V1.0) [!]
+    "660bc99b0023b731348535d160d894700fa4bab5b750dff70bd3ce79596f5793": kig_unpack,
+
+    # Killer Instinct Gold (U) (V1.1) [!]
+    "6cb27a5e1be6e65a8959a1b35dcd92f6203b45a1aaf5bcf573452d027943266c": kig_unpack,
+
+    # Killer Instinct Gold (U) (V1.2) [!]
+    "f80cae340efadf5725cd0f75441addb9186be9860267595be2b4a2d317b05f8a": kig_unpack,
+
+    # Killer Instinct Gold (E) [!]
+    "a77af932a359c4cd9f17f38e22ebccb3e11ae3dfd58da2780fbdec780809a4c0": kig_unpack,
 
     # ------------------------------------------------------
     # Bust-A-Move '99 with .bss-less preamble, that instead initializes .bss

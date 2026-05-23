@@ -14,10 +14,11 @@ import zlib
 import gzip
 
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
+from mips import make_andmask_load_store, make_andmask_reg_opcode
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from signature import SignatureBuilder, WILDCARD
-from sigutil import pick_pattern
+from sigutil import pick_pattern, contains_code
 
 logger = logging.getLogger(__name__)
 
@@ -520,3 +521,274 @@ def dk64_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # zlib with a two-byte header that means... uh... something?
 #
 # ---------------------------------------------------------------
+
+# ---------------------------------------------------------------
+#
+# Killer Instinct Gold
+# 
+# Boot stub loads main overlay, which is zlib with a "11 72" magic word.
+#
+# As usual in Rare games, overlay loading is a pain to trace:
+#
+# - 0x80000900 is the deflate routine
+# - 0x800121c8 loads the second overlay in the main table (=0x800071f8/fc) to 0x801abb20 and runs it
+# - 0x8000fa80 loads the third overlay in the main table (=0x80007200/04) to 0x801ad900 and then
+#   eventually some callback loaded from that is run
+# - 0x80012a8c reads overlay table starting from 0x80007260 and grabs the load
+#   addresses from 0x80044df4, but the addresses in that table are always 0x802D4000
+# - 0x80012100 takes two ints and then uses them to read compressed data from the overlay
+#   table starting at 0x80007208/0C. This is probably loading scripting data for the characters.
+#
+# The first three entries in the overlay table contain code
+# (probably main, frontend and ingame, in that order.)
+# These are followed by what I think are scripting data, as they don't seem to
+# contain any MIPS machine code.
+# 
+# ---------------------------------------------------------------
+
+KIG_MAIN_SEGMENT_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x00 lui   v0,0x8000 <-- overlay table address
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x04 addiu v0,v0,0x71f0
+        0x8c, 0x44, 0x00, 0x00,             # +0x08 lw    a0,0x0(v0)
+        0x8c, 0x4f, 0x00, 0x04,             # +0x0C lw    t7,0x4(v0)
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x10 lui   a1,0x802d
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x14 ori   a1,a1,0x4000
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x18 jal   readcart
+        0x01, 0xe4, 0x30, 0x23,             # +0x1C _subu a2,t7,a0
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x20 lui   a0,0x802d
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x24 lui   a1,0x8000 <-- load address
+        0x3c, 0x06, 0x80, WILDCARD,         # +0x28 lui   a2,0x803a
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x2C ori   a2,a2,0x2000
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x30 ori   a1,a1,0xf960
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x34 jal   deflate
+        0x34, 0x84, WILDCARD, WILDCARD,     # +0x38 _ori  a0,a0,0x4000
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x00) \
+    .const_op32_lo16("overlay_table_address", 0x04) \
+    .const_op32_hi16("load_address", 0x24) \
+    .const_op32_lo16("load_address", 0x30) \
+    .build()
+
+KIG_OVERLAY_2_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, 0x00,             # +0x00 lui        v0,0x8000 <-- should match base of overlay table
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x04 addiu      v0,v0,0x71f0
+        0x8c, 0x44, WILDCARD, WILDCARD,     # +0x08 lw         a0,0x8(v0)=>DAT_800071f8
+        0x8c, 0x59, WILDCARD, WILDCARD,     # +0x0C lw         t9,0xc(v0)=>DAT_800071fc
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x10 lui        a1,0x802d <-- buffer for deflated data
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x14 ori        a1,a1,0x6000
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x18 jal        SUB_800007b4
+        0x03, 0x24, 0x30, 0x23,             # +0x1C _subu      a2,t9,a0
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x20 lui        a0,0x802d
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x24 lui        a1,0x801b <-- where to inflate
+        0x3c, 0x06, 0x80, WILDCARD,         # +0x28 lui        a2,0x802d
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x2C ori        a2,a2,0x4000
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x30 addiu      a1,a1,-0x44e0
+        0x0c, 0x00, 0x02, 0x40,             # jal        SUB_80000900
+        0x34, 0x84, WILDCARD, WILDCARD,     # _ori       a0,a0,0x6000
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x00) \
+    .const_op32_lo16("overlay_table_address", 0x04) \
+    .const_imm32("overlay_rom_start_offset", 0x08) \
+    .const_imm32("overlay_rom_end_offset", 0x0C) \
+    .const_op32_hi16("load_address", 0x24) \
+    .const_op32_lo16("load_address", 0x30) \
+    .build()
+
+# similar to overlay 2 load but one less opcode and different reg usage
+KIG_OVERLAY_3_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, 0x00,             # +0x00 lui        v0,0x8000
+        0x24, 0x42, WILDCARD, WILDCARD,     # +0x04 addiu      v0,v0,0x71f0
+        0x8c, 0x44, WILDCARD, WILDCARD,     # +0x08 lw         a0,0x10(v0)=>DAT_80007200
+        0x8c, 0x40, WILDCARD, WILDCARD,     # +0x0C lw         t7,0x14(v0)=>DAT_80007204
+        0x3c, 0x10, 0x80, WILDCARD,         # +0x10 lui        s0,0x802d
+        0x36, 0x10, WILDCARD, WILDCARD,     # +0x14 ori        s0,s0,0x4000
+        0x02, 0x00, 0x28, 0x25,             # +0x18 or         a1,s0,zero
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal        SUB_800007b4
+        0x01, 0xe4, 0x30, 0x23,             # +0x20 _subu      a2,t7,a0
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x24 lui        a1,0x801b
+        0x3c, 0x06, 0x80, WILDCARD,         # +0x28 lui        a2,0x803a
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x2C ori        a2,a2,0x2000
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x30 addiu      a1,a1,-0x2700
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        SUB_80000900
+        0x02, 0x00, 0x20, 0x25,             # _or        a0,s0,zero
+    ]) \
+    .modify_andmask(0x0C, make_andmask_load_store(mask_dest=True, mask_imm16=True)) \
+    .modify_andmask(0x20, make_andmask_reg_opcode(mask_source=True)) \
+    .const_op32_hi16("overlay_table_address", 0x00) \
+    .const_op32_lo16("overlay_table_address", 0x04) \
+    .const_imm32("overlay_rom_start_offset", 0x08) \
+    .const_imm32("overlay_rom_end_offset", 0x0C) \
+    .const_op32_hi16("load_address", 0x24) \
+    .const_op32_lo16("load_address", 0x30) \
+    .build()
+
+# this sub overlay loader looks like it's loading code.
+# it even clears the instruction cache.
+# but it looks to be loading resources and nothing else.
+# i'm leaving this in here just in case.
+KIG_SUB_OVERLAY_TABLE_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x18, 0x80, 0x00,             # +0x00 lui        t8,0x8000
+        0x27, 0x18, WILDCARD, WILDCARD,     # +0x04 addiu      t8,t8,0x7260
+        0x00, 0x0e, 0x78, 0xc0,             # +0x08 sll        t7,t6,0x3
+        0x01, 0xf8, 0x10, 0x21,             # +0x0C addu       v0,t7,t8
+        0x8c, 0x44, 0x00, 0x00,             # +0x10 lw         a0,0x0(v0)
+        0x8c, 0x59, 0x00, 0x04,             # +0x14 lw         t9,0x4(v0)
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x18 lui        a1,0x8031
+        0x34, 0xa5, WILDCARD, WILDCARD,     # +0x1C ori        a1,a1,0x3090
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x20 jal        SUB_80000740
+        0x03, 0x24, 0x30, 0x23,             # +0x24 _subu      a2,t9,a0
+        0x93, 0xa8, 0x00, WILDCARD,         # +0x28 lbu        t0,local_res0+0x3(sp)
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x2C lui        a1,0x8004
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x30 lui        a0,0x8031
+        0x00, 0x08, 0x48, 0x80,             # +0x34 sll        t1,t0,0x2
+        0x00, 0xa9, 0x28, 0x21,             # +0x38 addu       a1,a1,t1
+        0x3c, 0x06, 0x80, WILDCARD,         # +0x3C lui        a2,0x8031
+        0x34, 0xc6, WILDCARD, WILDCARD,     # +0x40 ori        a2,a2,0x1090
+        0x8c, 0xa5, 0x4d, 0xf4,             # +0x44 lw         a1,0x4DF4(a1)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x48 jal        SUB_80000900
+        0x34, 0x84, WILDCARD, WILDCARD,     # +0x4C _ori       a0,a0,0x3090
+    ]) \
+    .const_op32_hi16("sub_overlay_table_address", 0x00) \
+    .const_op32_lo16("sub_overlay_table_address", 0x04) \
+    .const_op32_hi16("sub_overlay_loadaddr_table_address", 0x2C) \
+    .const_op32_lo16("sub_overlay_loadaddr_table_address", 0x44) \
+    .build()
+
+def kig_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    builder = BffiBuilder()
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_address-ipc]
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.fix(ipc, bootexe)
+
+    main_segment_load_offset = KIG_MAIN_SEGMENT_LOAD_PATTERN.find(bootexe)
+    if main_segment_load_offset is None:
+        return None
+    
+    logger.info("found Killer Instinct Gold main segment load")
+
+    consts = KIG_MAIN_SEGMENT_LOAD_PATTERN.consts(ipc, bootexe, main_segment_load_offset)
+    overlay_table_address = consts["overlay_table_address"].get_value()
+    load_address = consts["load_address"].get_value()
+
+    overlay_table_offset = overlay_table_address - ipc
+
+    main_overlay_rom_start, main_overlay_rom_end = struct.unpack(">II", bootexe[overlay_table_offset:overlay_table_offset+8])
+    main_overlay = rom.read_bytes(main_overlay_rom_start, main_overlay_rom_end)
+    if main_overlay[:2] != bytes([0x11,0x72]):
+        logger.error("main overlay did not start with 0x11 0x72")
+        return None
+    
+    main_overlay = zlib.decompress(main_overlay[2:], wbits=-15)
+    logger.info("main overlay decompressed: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                main_overlay_rom_start,
+                main_overlay_rom_end,
+                load_address)
+    
+    with open("private/kig_12_main.bin", "wb") as f:
+        f.write(main_overlay)
+
+    overlay_2_load_offset = KIG_OVERLAY_2_LOAD_PATTERN.find(main_overlay)
+    if overlay_2_load_offset is None:
+        logger.error("can't find overlay 2 load")
+        return None
+    
+    overlay_3_load_offset = KIG_OVERLAY_3_LOAD_PATTERN.find(main_overlay)
+    if overlay_3_load_offset is None:
+        logger.error("can't find overlay 3 load")
+        return None
+    
+    for pattern, offset in [ (KIG_OVERLAY_2_LOAD_PATTERN, overlay_2_load_offset),
+                             (KIG_OVERLAY_3_LOAD_PATTERN, overlay_3_load_offset)]:
+        consts = pattern.consts(load_address, main_overlay, offset)
+        if consts["overlay_table_address"].get_value() != overlay_table_address:
+            logger.warning("false positive hit - ignoring")
+            continue
+        
+        overlay_rom_start_offset = consts["overlay_rom_start_offset"].get_value() & 0xFFFF
+        overlay_rom_end_offset = consts["overlay_rom_end_offset"].get_value() & 0xFFFF
+        if overlay_rom_end_offset != overlay_rom_start_offset+4:
+            logger.warning("wha?? overlay start offset/end offset not in order (%04x, %04x)",
+                           overlay_rom_start_offset,
+                           overlay_rom_end_offset)
+            continue
+        
+        overlay_load_address = consts["load_address"].get_value()
+
+        overlay_table_entry_offset = overlay_table_offset + overlay_rom_start_offset
+        overlay_rom_start, overlay_rom_end = struct.unpack(">II",bootexe[overlay_table_entry_offset:overlay_table_entry_offset+8])
+
+        logger.info("overlay: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                    overlay_rom_start,
+                    overlay_rom_end,
+                    overlay_load_address)
+        
+        overlay = rom.read_bytes(overlay_rom_start, overlay_rom_end-overlay_rom_start)
+        if overlay[:2] != bytes([0x11, 0x72]):
+            logger.error("overlay did not start with 0x11 0x72")
+            return None
+        
+        overlay = zlib.decompress(overlay[2:], wbits=-15)
+
+        if contains_code(overlay) is False:
+            # should NOT end up here
+            logger.info("overlay doesn't contain code, skipping")
+            continue
+        builder.seg(overlay_load_address, overlay)
+    
+    # disabled because none of these contain MIPS machine code
+    # and because the pattern check fails on euro version.
+    # it's here in case someone needs to re-enable it
+    if False:
+        sub_overlay_loader_offset = KIG_SUB_OVERLAY_TABLE_LOAD_PATTERN.find(main_overlay)
+        if sub_overlay_loader_offset is None:
+            logger.error("can't find sub overlay loader")
+            return None
+        
+        consts = KIG_SUB_OVERLAY_TABLE_LOAD_PATTERN.consts(load_address, main_overlay, sub_overlay_loader_offset)
+        sub_overlay_table_address = consts["sub_overlay_table_address"].get_value()
+        sub_overlay_loadaddr_table_address = consts["sub_overlay_loadaddr_table_address"].get_value()
+
+        # yes, this is split between two segments, so be aware of that
+        sub_overlay_table_offset           = sub_overlay_table_address - ipc
+        sub_overlay_loadaddr_table_offset  = sub_overlay_loadaddr_table_address - load_address
+
+        while True:
+            # read load address first, as the sub overlay table goes right up to the
+            # end of the boot segment and we don't want to read out of bounds
+            ram_address = struct.unpack(">I", main_overlay[sub_overlay_loadaddr_table_offset:sub_overlay_loadaddr_table_offset+4])[0]
+            if (ram_address >> 24) != 0x80:
+                break
+            sub_overlay_loadaddr_table_offset += 4
+
+            rom_start, rom_end = struct.unpack(">II", bootexe[sub_overlay_table_offset:sub_overlay_table_offset+0x08])
+            sub_overlay_table_offset += 8
+
+            logger.info("sub overlay: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                        rom_start,
+                        rom_end,
+                        ram_address)
+            
+            sub_overlay = rom.read_bytes(rom_start, rom_end-rom_start)
+            if sub_overlay[:2] != bytes([0x11, 0x72]):
+                logger.error("sub overlay did not start with 0x11 0x72")
+                return None
+            
+            sub_overlay = zlib.decompress(sub_overlay[2:], wbits=-15)
+
+            if contains_code(sub_overlay) is False:
+                logger.info("sub overlay doesn't contain code, skipping")
+                continue
+
+            builder.seg(ram_address, sub_overlay)
+    
+    return builder.build()

@@ -2,7 +2,7 @@
 Signature-related stuff I keep repeating in the various game drivers
 '''
 
-from signature import Signature
+from signature import Signature, SignatureBuilder
 
 def pick_pattern(buffer: bytes,
                  patterns: list[Signature],
@@ -41,3 +41,12 @@ def find_all_instances(buffer: bytes,
         if align32 and (offset & 3) != 0:
             offset = (offset + 4) & ~3
 
+
+
+STACK_MOVE_BACK_PATTERN = SignatureBuilder() \
+    .bits(   bytes([0x27, 0xBD, 0x80, 0x00])) \
+    .andmask(bytes([0xFF, 0xFF, 0x80, 0x00])) \
+    .build()
+
+def contains_code(buffer: bytes) -> bool:
+    return STACK_MOVE_BACK_PATTERN.find(buffer) is not None
