@@ -7,6 +7,7 @@ from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_u
 from .bam import bam99_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .buckbumble import buckbumble_unpack
+from .daikatana import daikatana_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
 from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack
@@ -1063,6 +1064,19 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # South Park Rally (E) [!]
     "20192eac2b4ae2eac5a5eb0f516463a789e6e5a2860411ea7f91f5f46fb9fe0a": sparkrally_unpack,
+
+    # ------------------------------------------------------
+    # Daikatana
+    # ------------------------------------------------------
+    
+    # John Romero's Daikatana (U) [!]
+    "b7a2db013ff1e0628fec4dd87399eb01ede4a3f185be2e7653ff2e072bf42f6c": daikatana_unpack,
+
+    # John Romero's Daikatana (E) (M3) [!]
+    "3bbf87a2fb2479996cd544758b38ac09861b77235fb8f35b31150e481966653b": daikatana_unpack,
+
+    # John Romero's Daikatana (J) [!]
+    "d733debf3a38c643127d58e84b086f44948bd630bf6449030db8cea1ca51abf8": daikatana_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
