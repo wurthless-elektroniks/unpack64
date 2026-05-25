@@ -14,6 +14,7 @@ from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
+from .eurocom import mk4_unpack
 from .extremeg import extremeg_unpack, xg2_unpack
 from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
@@ -601,8 +602,6 @@ GAME_SPECIFIC_UNPACKERS = {
     # Cruis'n Exotica (U) [!]
     "d26ecb1b3a3dc965acc1063cc243ab573bf5ffca310e96aff2f6d2265a49f0b1": cruisnexotica_unpack,
 
-    # Cruis'n World appears to be a single-load game...
-
     # ------------------------------------------------------
     # Worms Armageddon
     # ------------------------------------------------------
@@ -1090,6 +1089,16 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Premier Manager 64 (E) [!]
     "a3c0a0b8c41c2d8215b253aa330517b91329986d2cc6b2882d638de06e72a4c9": pm64_unpack,
+
+    # ------------------------------------------------------
+    # Eurocom
+    # ------------------------------------------------------
+
+    # Mortal Kombat 4 (U) [!]
+    "ea908a1f790340dc34f1056c4799f7d0984048d90344607f2910d96abf036478": mk4_unpack,
+
+    # Mortal Kombat 4 (E) [!]
+    "9bf17deaf7a7beabccb285ccf6e0394cbeb2cc88dcc390efdc2a79ef20e79f34": mk4_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
