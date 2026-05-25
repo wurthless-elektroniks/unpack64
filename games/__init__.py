@@ -31,6 +31,7 @@ from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
 from .mspacman import mspacman_unpack
 from .nintendo import sm64_unpack, drmario_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
+from .pm64 import pm64_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
 from .re2 import re2_unpack
 from .sarge  import sarge_unpack
@@ -758,6 +759,13 @@ GAME_SPECIFIC_UNPACKERS = {
     # NHL 99 (E) [!]
     "1660afff428682d1b4852239bc4fab2e35b2fd14d6c2d9d339269430702df731": nhl99_unpack,
 
+    # Supercross 2000 (U) [!]
+    # (not to be confused with Jeremy McGrath Supercross 2000)
+    "2659be83dc4d8795d01d4838383579ad9aecf1a06ef0ea6aebc9588184fb9080": nhl99_unpack,
+
+    # Supercross 2000 (E) (M3) [!]
+    "92db4d0ba456d921c077d5bd524c913c297ea888bc78d5018ced70faa6203a59": nhl99_unpack,
+
     # NBA Live 2000 (U) (M4) [!]
     "3f36da957e6e578f029adbe183d76a2c94352d90dd9ef75ddb3e151ea367eca7": nbalive2k_unpack,
 
@@ -1077,6 +1085,11 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # John Romero's Daikatana (J) [!]
     "d733debf3a38c643127d58e84b086f44948bd630bf6449030db8cea1ca51abf8": daikatana_unpack,
+
+    # ------------------------------------------------------
+
+    # Premier Manager 64 (E) [!]
+    "a3c0a0b8c41c2d8215b253aa330517b91329986d2cc6b2882d638de06e72a4c9": pm64_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
