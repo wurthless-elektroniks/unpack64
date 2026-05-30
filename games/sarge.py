@@ -16,6 +16,7 @@ Sarge's Heroes (US):
 3. Slot for third BSS range is unused (game uses 0x800b97f0~0x800b97f0)
 4. Copy osMemSize (0x80000318) -> 0x8007cadc (seems to be ignored)
 5. Call CRT startup at 0x80050810
+
 '''
 
 import struct
@@ -24,6 +25,7 @@ import logging
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,71 @@ SARGE_PREAMBLE = SignatureBuilder() \
     .xref_op32_lo16("osMemSize_shadow_base", 0x78) \
     .build()
 
+SARGE_MISSIONS_OVERLAY_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0x98,             # +0x00 addiu      sp,sp,-0x68
+        0xaf, 0xb2, 0x00, 0x58,             # +0x04 sw         s2,local_10(sp)
+        0x3c, 0x12, 0x80, WILDCARD,         # +0x08 lui        s2,0x8020         <-- RAM start address
+        0x26, 0x52, WILDCARD, WILDCARD,     # +0x0C addiu      s2,s2,-0x6790
+        0x02, 0x40, 0x20, 0x21,             # +0x10 move       a0,s2
+        0xaf, 0xb1, 0x00, 0x54,             # +0x14 sw         s1,local_14(sp)
+        0x3c, 0x11, 0x80, WILDCARD,         # +0x18 lui        s1,0x8020 <-- RAM end address
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0x1C addiu      s1,s1,-0x3990
+        0x02, 0x32, 0x88, 0x23,             # +0x20 subu       s1,s1,s2
+        0x02, 0x20, 0x28, 0x21,             # +0x24 move       a1,s1
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x28 lui        v0,0x8015
+        0xaf, 0xb3, 0x00, 0x5c,             # +0x2C sw         s3,local_c(sp)
+        0x3c, 0x13, 0xb0, WILDCARD,         # +0x30 lui        s3,0xb013 <-- ROM address
+        0x26, 0x73, WILDCARD, WILDCARD,     # +0x34 addiu      s3,s3,0x55f0
+        0xaf, 0xbf, 0x00, 0x64,             # +0x38 sw         ra,local_4(sp)
+        0xaf, 0xb4, 0x00, 0x60,             # +0x3C sw         s4,local_8(sp)
+        0xaf, 0xb0, 0x00, 0x50,             # +0x40 sw         s0,local_18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x44 jal        osInvalDCache
+        0xac, 0x40, WILDCARD, WILDCARD,     # +0x48 _sw        zero,-0x1e8c(v0)
+        0x27, 0xa4, 0x00, 0x20,             # +0x4C addiu      a0,sp,0x20
+    ]) \
+    .const_op32_hi16("ram_start_address", 0x08) \
+    .const_op32_lo16("ram_start_address", 0x0C) \
+    .const_op32_hi16("ram_end_address", 0x18) \
+    .const_op32_lo16("ram_end_address", 0x1C) \
+    .const_op32_hi16("rom_address", 0x30) \
+    .const_op32_lo16("rom_address", 0x34) \
+    .build()
+
+# different registers and i'm too lazy to AND mask them all
+SARGE_2_MISSIONS_OVERLAY_LOAD_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0x98,             # +0x00 addiu      sp,sp,-0x68
+        0xaf, 0xb1, 0x00, 0x54,             # +0x04 sw         s1,local_14(sp)
+        0x3c, 0x11, 0x80, WILDCARD,         # +0x08 lui        s1,0x8021
+        0x26, 0x31, WILDCARD, WILDCARD,     # +0x0C addiu      s1,s1,0x4560
+        0x02, 0x20, 0x20, 0x21,             # +0x10 move       a0,s1
+        0xaf, 0xb0, 0x00, 0x50,             # +0x14 sw         s0,local_18(sp)
+        0x3c, 0x10, 0x80, WILDCARD,         # +0x18 lui        s0,0x8021
+        0x26, 0x10, WILDCARD, WILDCARD,     # +0x1C addiu      s0,s0,0x7140
+        0x02, 0x11, 0x80, 0x23,             # +0x20 subu       s0,s0,s1
+        0x02, 0x00, 0x28, 0x21,             # +0x24 move       a1,s0
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x28 lui        v0,0x8016
+        0xaf, 0xb2, 0x00, 0x58,             # +0x2C sw         s2,local_10(sp)
+        0x3c, 0x12, 0xb0, WILDCARD,         # +0x30 lui        s2,0xb015
+        0x26, 0x52, WILDCARD, WILDCARD,     # +0x34 addiu      s2,s2,-0xd90
+        0xaf, 0xbf, 0x00, 0x64,             # +0x38 sw         ra,local_4(sp)
+        0xaf, 0xb4, 0x00, 0x60,             # +0x3C sw         s4,local_8(sp)
+        0xaf, 0xb3, 0x00, 0x5c,             # +0x40 sw         s3,local_c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x44 jal        osInvalDCache
+        0xac, 0x40, WILDCARD, WILDCARD,     # +0x48 _sw        zero,-0x39fc(v0)
+        0x27, 0xa4, 0x00, 0x20,             # +0x4C addiu      a0,sp,0x20
+
+    ]) \
+    .const_op32_hi16("ram_start_address", 0x08) \
+    .const_op32_lo16("ram_start_address", 0x0C) \
+    .const_op32_hi16("ram_end_address", 0x18) \
+    .const_op32_lo16("ram_end_address", 0x1C) \
+    .const_op32_hi16("rom_address", 0x30) \
+    .const_op32_lo16("rom_address", 0x34) \
+    .build()
+
+
 def sarge_unpack(rom: N64Rom, ipc: int) -> Bffi:
     bootexe = rom.boot_exe()
 
@@ -88,6 +155,24 @@ def sarge_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     osMemSize_shadow_address = osMemSize_shadow_base + osMemSize_shadow_offset
 
+
+    bootexe = bootexe[:i55_start_address-ipc]
+
+    missions_overlay_pattern, missions_overlay_load_offset = pick_pattern(bootexe, 
+                                                                          [ SARGE_MISSIONS_OVERLAY_LOAD_PATTERN, 
+                                                                            SARGE_2_MISSIONS_OVERLAY_LOAD_PATTERN ])
+    if missions_overlay_load_offset is None:
+        logger.error("can't find missions overlay load")
+        return None
+    
+    consts = missions_overlay_pattern.consts(ipc, bootexe, missions_overlay_load_offset)
+    missions_overlay_ram_start_address = consts["ram_start_address"].get_value()
+    missions_overlay_ram_end_address = consts["ram_end_address"].get_value()
+    missions_overlay_size = missions_overlay_ram_end_address - missions_overlay_ram_start_address
+    missions_overlay_rom_address = consts["rom_address"].get_value() & 0x03FFFFFF
+    missions_overlay = rom.read_bytes(missions_overlay_rom_address, missions_overlay_size)
+
+
     logger.info(\
 """fast facts:
 - entry point: 0x%08x
@@ -95,17 +180,20 @@ def sarge_unpack(rom: N64Rom, ipc: int) -> Bffi:
 - bss 0x55 section range: 0x%08x-0x%08x
 - bss 0x00 section range: 0x%08x-0x%08x
 - osMemSize shadowed at: (0x%08x + 0x%04x) --> 0x%08x
+- missions overlay: ROM 0x%08x-0x%08x -> RAM 0x%08x
 """,
     crt_entry,
     initial_sp,
     i55_start_address, i55_end_address,
     bss_start_address, bss_end_address,
-    osMemSize_shadow_base, osMemSize_shadow_offset, osMemSize_shadow_address
+    osMemSize_shadow_base, osMemSize_shadow_offset, osMemSize_shadow_address,
+    missions_overlay_rom_address, missions_overlay_rom_address+missions_overlay_size, missions_overlay_ram_start_address
     )
 
     builder = BffiBuilder()
     builder.rom_hash(rom.sha256())
     builder.fix(ipc, bootexe[:i55_start_address-ipc])
+    builder.seg(missions_overlay_ram_start_address, missions_overlay)
     builder.bss(i55_start_address, i55_end_address-i55_start_address, init_word=0x55555555)
     builder.bss(bss_start_address, bss_end_address-bss_start_address)
     builder.initial_stack_pointer(initial_sp)
