@@ -36,6 +36,9 @@ def lzss_decompress(buffer: bytes) -> bytes:
             c = buffer[buffer_pos]
             buffer_pos += 1
 
+            # lower 8 bits are the bitstream, upper 8 bits are stop flags
+            # (once the 8 bits we read have been shifted right, flags & 0x100 == 0
+            # and the flags must be repopulated)
             flags = c | 0xFF00
         
         if (flags & 1) != 0:

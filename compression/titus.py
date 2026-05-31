@@ -18,13 +18,13 @@ masochistic enough to replicate it here, it's copy pasted code time.
 
 import struct
 
-
 class TitusState:
     def __init__(self, input_buffer: bytes):
         self._input_buffer = input_buffer
         self._input_offset = 0
         
-        self._flags = 0
+        self._bitbuffer = 0
+        self._bits_on_buffer = 0
         self.repopulate_flags()
         
     def read_byte(self):
@@ -36,16 +36,34 @@ class TitusState:
         b0 = self.read_byte()
         b1 = self.read_byte()
 
-        self._flags = 0x010000 | (b1 << 8) | b0
+        # in the original code it will load 0x8000FFFF or something to the bitbuffer
+        # and on every rightshift it will check if bit 15 is 0.
+        # in zoinkitty's implementation the stop bit is bit 16 and
+        # read_flag() below makes sure the stop flag is in bit 1 or above.
+        # all this is doing is checking if there are 16 bits on the buffer
+        # and repopulating the bitbuffer if it is empty.
+        # so let's cut the fancy crap and make this code readable
+        self._bitbuffer = (b1 << 8) | b0
+        self._bits_on_buffer = 16
+
 
     def read_flag(self):
-        flag_before_shift = (self._flags & 1) != 0
-        self._flags >>= 1
+        flag_before_shift = (self._bitbuffer & 1) != 0
+        self._bitbuffer >>= 1
+        self._bits_on_buffer -= 1
 
-        if self._flags < 2:
+        if self._bits_on_buffer == 0:
             self.repopulate_flags()
         
         return flag_before_shift
+
+    def read_bits(self,
+                  count: int,
+                  existing_bitbuffer: int = 0) -> int:
+        bits = existing_bitbuffer
+        for _ in range(count):
+            bits = (bits << 1) | (1 if self.read_flag() is True else 0)
+        return bits
 
 def _backseek_common(output_buffer: bytes,
                      bank: int, 
@@ -53,15 +71,16 @@ def _backseek_common(output_buffer: bytes,
                      count : int,
                      output_size: int = 0):
     
-    backseek = (bank << 8) | backseek
+    backseek_pointer = (bank << 8) | backseek
 
-    if backseek != 0 and (backseek & 0x80000000) == 0:
-        raise RuntimeError("backseek was not 0 or negative")
-    
+    backseek_pointer &= 0xFFFFFFFF
+    if backseek_pointer != 0 and (backseek_pointer & 0x80000000) == 0:
+        raise RuntimeError(f"backseek_pointer was not 0 or negative: {backseek_pointer:08x} (bank {bank:08x} backseek {backseek:08x})")
+
     # *now* treat the thing as a signed int
-    backseek = struct.unpack(">i", struct.pack(">I",backseek))[0]
+    backseek_pointer = struct.unpack(">i", struct.pack(">I",backseek_pointer))[0]
 
-    backseek_position = len(output_buffer) + backseek
+    backseek_position = len(output_buffer) + backseek_pointer
     for _ in range(count):
         if output_size > 0 and len(output_buffer) >= output_size:
             return output_buffer
@@ -95,9 +114,7 @@ def titus_decompress(input_buffer: bytes,
         if v is False:
             # 0b00 = two-byte backseek
             if state.read_flag() is True:
-                for _ in range(3):
-                    bank = (bank << 1) | 1 if state.read_flag() is True else 0
-                bank -= 1
+                bank = state.read_bits(3, existing_bitbuffer=bank) - 1
             else: # NOT elif!
                 if backseek == 0xFF:
                     return output_buffer
@@ -107,15 +124,15 @@ def titus_decompress(input_buffer: bytes,
             
         # v was true (bitstream so far was 0b01); that means we have to do a lot of value crunching
         # before we know what to dump
-        bank = (bank << 1) | 1 if state.read_flag() is True else 0
-
+        bank = state.read_bits(1, existing_bitbuffer=bank)
+        
         if state.read_flag() is False:
             # have to swap banks again
             temp = 2
             for _ in range(3):
                 if state.read_flag() is True:
                     break
-                bank = (bank << 1) | 1 if state.read_flag() is True else 0
+                bank = state.read_bits(1, existing_bitbuffer=bank)
                 temp <<= 1
             bank -= temp
         
@@ -139,23 +156,16 @@ def titus_decompress(input_buffer: bytes,
             1 : 4,
             2 : 5,
             3 : 6,
-            4 : lambda state: 8 if state.read_flag() is True else 7,
-            5 : lambda state: 0x11 + state.read_byte()
+            4 : lambda state: 0x07 + state.read_bits(1),
+            5 : lambda state: 0x11 + state.read_byte(),
+            6 : lambda state: 0x09 + state.read_bits(3)
         }
 
-        count = None
-        if zero_count == 6:
-            bits = 0
-            for _ in range(3):
-                bits <<= 1
-                bits |= 1 if state.read_flag() is True else 0
-            count = 9 + bits
-        else:
-            count = zerocount_to_bytecount[zero_count]
-            if not isinstance(count, int):
-                # pylint:disable=not-callable
-                # (because it IS callable and None should never be seen here)
-                count = count(state)
+        count = zerocount_to_bytecount[zero_count]
+        if not isinstance(count, int):
+            # pylint:disable=not-callable
+            # (because it IS callable and None should never be seen here)
+            count = count(state)
 
         # with the count established, it's backseek time
         output_buffer = _backseek_common(output_buffer, bank, backseek, count)

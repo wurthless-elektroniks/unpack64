@@ -37,9 +37,11 @@ def _excitebike_decompress_subloop(input,
                         v1):
     while True:
         if uVar11 == 1:
+            # repopulate bitbuffer if empty
             uVar11 = input[input_pointer] | 0x100
             input_pointer += 1
 
+        # keep shifting bits into v0 until v1 is 0
         at = uVar11 & 1
         v0 <<= 1
         v0 |= at
@@ -62,10 +64,13 @@ def _excitebike_decompress_common(input: bytes,
         # loop from 8001143c - 80011474
         while True:
             if uVar11 == 1:
+                # stop bit hit, repopulate bitbuffer
                 uVar11 = input[input_pointer] | 0x100
                 input_pointer += 1
 
-            # compiler inlined this logic: 80011440/8001146c are logically identical
+            # compiler inlined this logic: 80011440/8001146c are logically identical.
+            # read one bit from the bitbuffer, and if it is zero, then copy one byte
+            # directly from the input to the output
             t2 = (uVar11 & 1)
             uVar11 >>= 1
             if t2 != 0:
@@ -76,6 +81,7 @@ def _excitebike_decompress_common(input: bytes,
             output[output_pointer] = input[input_pointer]
             input_pointer += 1
             output_pointer += 1
+
 
         # 80011478
         while True:

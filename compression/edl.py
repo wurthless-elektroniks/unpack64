@@ -176,10 +176,10 @@ def _rebuild_table(state: EdlState, xsize: int, tsize: int):
 
         x = -1
         while True:
-            x = y if y in base_table[x+1:] else -1
-            if x < 0:
+            if y not in base_table[x+1:]:
                 break
-            when.append(x)
+            x = y
+            when.append(y)
     
     # count entries and create sample table
     count = sum(n)
@@ -272,6 +272,13 @@ def _auto_rebuild_table(state, list_in, tsize):
         return _rebuild_table(state, x, tsize)
     return list_in
 
+def _decode_reference(state: EdlState, x, num_bits, table, offset):
+    m = (x >> 4) & 7
+    x >>= 7
+    v = state.peek_bits(num_bits + m)
+    v >>= num_bits
+    return table[x + v + offset]
+
 def _edl_decompress_mode_1(state: EdlState):
     output = bytearray()
 
@@ -307,8 +314,7 @@ def _edl_decompress_mode_1(state: EdlState):
             x = large_list[ state.peek_bits(10) ]
 
             if (x & 0x0F) == 0:
-                # find reference
-                pass
+                x = _decode_reference(state, x, 10, large_list, 0x400)
 
             # advance stream by the number of bits we found
             state.read_bits((x & 0xF))
@@ -334,8 +340,7 @@ def _edl_decompress_mode_1(state: EdlState):
 
             x = small_list[ state.peek_bits(8) ]
             if (x & 0x0F) == 0:
-                # find reference
-                pass
+                x = _decode_reference(state, x, 8, small_list, 0x100)
             
             # advance stream by the number of bits we found
             state.read_bits(x & 0x0F)

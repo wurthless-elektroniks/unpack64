@@ -18,7 +18,7 @@ def mariotennis_decompress(input: bytes):
     output = bytearray()
 
     # four-byte header is ignored by the decompressor code.
-    # byte 0 = not sure, should be 1.
+    # byte 0 = 1 if compressed, 0 otherwise
     # bytes 1-3: size of decompressed payload
     expected_output_size = struct.unpack(">I", input[:4])[0] & 0x00FFFFFF
 
@@ -34,11 +34,17 @@ def mariotennis_decompress(input: bytes):
                 input_pointer += 1
             continue
 
+        # "ctrl_word" is a bitbuffer, read left-to-right, to which a
+        # stop bit is appended
         ctrl_word = (byte_in << 24) | 0x00800000
 
         # subloop starting at 80300108
         while True:
             _assert_size_limit(output, expected_output_size)
+
+            # copy up to 8 bytes from input to output
+            # looping until 8 bits have been read from the bit buffer,
+            # or a 1 bit is encountered
             if (ctrl_word & 0x80000000) == 0:
                 # this loop is unrolled in the unpacker
                 for _ in range(8):
@@ -57,9 +63,11 @@ def mariotennis_decompress(input: bytes):
 
             # code execution picks up from 0x80300184
             if (ctrl_word & 0xFFFFFFFF) == 0:
+                # if the bitbuffer is totally empty at this point,
                 # break from subloop, start from mainloop
                 break
 
+            # if there are still bits left in the bitbuffer, then backseek
             v1 = input[input_pointer + 1]
             a1 = input[input_pointer]
 
