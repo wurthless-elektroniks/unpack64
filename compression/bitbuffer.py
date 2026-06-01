@@ -109,8 +109,15 @@ class Bitstream:
                   count: int,
                   existing_bits: int = 0) -> int:
         '''
-        Read n bits from buffer as an integer, read left-to-right.
-        For 0...n, shift bits left once, then OR with the next bit.
+        Read n bits from buffer in the native order of the stream and return them as an integer.
+
+        For i=0...n, shift bits left once, then OR with the next bit.
+
+        If the bitstream is read right-to-left, with bitbuffer = 0b11_10_01_00 and count = 8,
+        then the result will be 0b00_10_01_11.
+
+        If the bitstream is read left-to-right, with bitbuffer = 0b11_10_01_00 and count = 8,
+        then the result will be 0b11_10_01_00.
         '''
         bits = existing_bits
         for _ in range(count):
@@ -118,6 +125,23 @@ class Bitstream:
             bits |= self.read_bit()
         return bits
     
+    def read_bits_lifo(self, count: int):
+        '''
+        Read n bits from buffer in the inverse order of the stream and return them as an integer.
+
+        With bits=0 and for i=0...n, bits |= (input_bit << i).
+
+        If the bitstream is read right-to-left, with bitbuffer = 0b11_10_01_00 and count = 8,
+        then the result will be 0b11_10_01_00.
+
+        If the bitstream is read left-to-right, with bitbuffer = 0b11_10_01_00 and count = 8,
+        then the result will be 0b00_10_01_11.
+        '''
+        bits = 0
+        for i in range(count):
+            bits |= (self.read_bit() << i)
+        return bits
+
     def count_zero_bits(self, max_count: int) -> int:
         '''
         Count number of zero bits until a 1 bit is hit or until max_count bits have been read.
