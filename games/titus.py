@@ -10,10 +10,15 @@ Games that should be in here:
 Titus games also compress code/data; compressed blocks usually contain the magic word 0x9D89646C.
 Roadsters obviously compresses code within these sections (searching for 27 FB xx xx AF BF xx xx
 turns up hits). The decompressor is another piece of assembler spaghetti so it's a do-later.
+
+TODO: Lambo *might* be a single-load game... have to fully validate Titus decompressor
+and all code first, but I can't find any code segments besides the boot segment...
 '''
 
 import logging
 import struct
+
+from compression.titus import titus_decompress
 
 from bffi import Bffi, BffiBuilder
 from n64rom import N64Rom
@@ -182,18 +187,11 @@ def _superman_extract_rom_range(bindat: bytes, pattern_offset: int):
     output.sort()
     return output
 
-def superman_unpack(rom: N64Rom, ipc: int) -> Bffi:
-    preamble = identify_preamble(rom.boot_exe(), ipc)
-    if preamble is None:
-        return None
 
-    builder = BffiBuilder()
-    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
-    bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
-
-    builder.fix(ipc, bootexe)
-    builder.initial_stack_pointer(preamble.initial_stack_pointer())
-    builder.initial_program_counter(preamble.crt_entry_point())
+def _titus_readcart_common(rom: N64Rom,
+                           ipc: int,
+                           bootexe: bytes,
+                           builder: BffiBuilder) -> Bffi:
 
     _, read_cart_offset = pick_pattern(bootexe, [ SUPERMAN_READ_CART_PATTERN, ROADSTERS_READ_CART_PATTERN, LAMBO_READ_CART_PATTERN ])
     if read_cart_offset is None:
@@ -242,3 +240,94 @@ def superman_unpack(rom: N64Rom, ipc: int) -> Bffi:
         builder.seg(ram_load_address, resource)
 
     return builder.build()
+
+def superman_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    # TODO: find superman specific crap
+
+    return _titus_readcart_common(rom, ipc, bootexe, builder)
+
+
+# ----------------------------------------------------------------
+#
+# Roadsters
+#
+# Unlike Superman this one uses tables that point us to the resources
+# and their load addresses. There's one table containing mixed code/data
+# resources, so we dump that.
+#
+# ----------------------------------------------------------------
+
+ROADSTERS_DECOMPRESS_CODE_PATTERN = SignatureBuilder() \
+    .pattern([
+        # FIXME: disassembly wrong, have to rewrite that
+        0x3c, 0x19, 0x80, WILDCARD,         # +0x00 lui        t8,0x8006
+        0x27, 0x39, WILDCARD, WILDCARD,     # +0x04 addiu      t8,t8,0x42c4
+        0x00, 0x0c, 0x68, 0x80,             # +0x08 sll        t7,t6,0x2
+        0x01, 0xac, 0x68, 0x23,             # +0x0C subu       t7,t7,t6
+        0x00, 0x0d, 0x68, 0x80,             # +0x10 sll        t7,t7,0x2
+        0x01, 0xb9, 0x70, 0x21,             # +0x14 addu       t0,t7,t8
+        0x8d, 0xc4, 0x00, 0x00,             # +0x18 lw         a0,0x0(t0)
+        0x8d, 0xc5, 0x00, 0x08,             # +0x1C lw         a1,0x8(t0)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x20 jal        titus_decompress
+        0x00, 0x00, 0x30, 0x25,             # +0x24 _or        a2,zero,zero
+    ]) \
+    .const_op32_hi16("overlay_table_address", 0x00) \
+    .const_op32_lo16("overlay_table_address", 0x04) \
+    .build()
+
+def roadsters_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss_section, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_section-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+
+    decompress_code_offset = ROADSTERS_DECOMPRESS_CODE_PATTERN.find(bootexe)
+    if decompress_code_offset is None:
+        return None
+    
+    logger.info("found Roadsters loader")
+
+    consts = ROADSTERS_DECOMPRESS_CODE_PATTERN.consts(ipc, bootexe, decompress_code_offset)
+    
+    overlay_table_address = consts["overlay_table_address"].get_value()
+    overlay_table_offset = overlay_table_address - ipc
+
+    while True:
+        rom_start, rom_end, load_address = struct.unpack(">III", bootexe[overlay_table_offset:overlay_table_offset+12])
+        overlay_table_offset += 12
+
+        if (load_address >> 24) != 0x80:
+            break
+
+        resource = rom.read_bytes(rom_start, rom_end-rom_start)
+        resource = titus_decompress(resource)
+
+        if STACK_MOVE_BACK_PATTERN.find(resource) is None:
+            continue
+
+        logger.info("found compressed code segment: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                    rom_start,
+                    rom_end,
+                    load_address)
+        builder.seg(load_address, resource)
+    
+    return _titus_readcart_common(rom, ipc, bootexe, builder)

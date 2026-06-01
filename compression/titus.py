@@ -93,7 +93,13 @@ def _backseek_common(output_buffer: bytes,
 def titus_decompress(input_buffer: bytes,
                      output_size: int = 0) -> bytes:
     output_buffer = bytearray()
-    state = TitusState(input_buffer[0x11:])
+
+    # magic actually is b4 4c cd 21 9d 89 64 6c,
+    # but the games only check the second 32-bit word
+    if input_buffer[4:8] == bytes([0x9D, 0x89, 0x64, 0x6C]):
+        state = TitusState(input_buffer[0x11:])
+    else:
+        state = TitusState(input_buffer)
 
     while (output_size <= 0) or (len(output_buffer) < output_size):
         # while we keep hitting 1 bits, copy bytes to output

@@ -42,7 +42,7 @@ from .slugfest import slugfest_unpack
 from .sote import sote_unpack
 from .sparkrally import sparkrally_unpack
 from .sw1racer import sw1racer_unpack
-from .titus import superman_unpack
+from .titus import superman_unpack, roadsters_unpack
 from .tt import ts2_unpack
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
@@ -874,10 +874,10 @@ GAME_SPECIFIC_UNPACKERS = {
     "ae0cb81d7fff296f4a079e3ec08255ea9d65979230bb41ab4ae492bf830d56a0": superman_unpack,
 
     # Roadsters Trophy (U) (M3) [!]
-    "49c4494ce6acca523c7066b0bdf598ff466a9b5a91cb2ff85730a7079c1911fd": superman_unpack,    
+    "49c4494ce6acca523c7066b0bdf598ff466a9b5a91cb2ff85730a7079c1911fd": roadsters_unpack,    
 
     # Roadsters Trophy (E) (M6) [!]
-    "ba3307883fe81ddeb81ed6a51cb1d4cd9d3353c73ca9007c02212c777b572e2e": superman_unpack,    
+    "ba3307883fe81ddeb81ed6a51cb1d4cd9d3353c73ca9007c02212c777b572e2e": roadsters_unpack,    
 
     # Automobili Lamborghini (U) [!]
     "cab2467684a58bc19c787423d704a961aa497629763367d9fe691172de58591c": superman_unpack,
