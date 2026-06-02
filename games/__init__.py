@@ -26,6 +26,7 @@ from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_
 from .imagineer import simcity_unpack, yakyuuking_unpack, mrc_unpack, fightersdestiny_unpack
 from .locomotive import pennyracers_unpack, transformers_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
+from .madden import madden64_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
@@ -1099,6 +1100,16 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Mortal Kombat 4 (E) [!]
     "9bf17deaf7a7beabccb285ccf6e0394cbeb2cc88dcc390efdc2a79ef20e79f34": mk4_unpack,
+
+    # ------------------------------------------------------
+    # EA's Madden NFL games
+    # ------------------------------------------------------
+
+    # Madden Football 64 (U) [!]
+    "39f25dad3af4782a909bf58d7127acae700ea7c6f17c48d39ab76fe331735d6f": madden64_unpack,
+    
+    # Madden Football 64 (E) [!]
+    "7eaef372a0e0f00a8e0150150686d1c72a87c5232a9ea3b374424275efdad059": madden64_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
