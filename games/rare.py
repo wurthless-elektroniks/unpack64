@@ -693,9 +693,6 @@ def kig_unpack(rom: N64Rom, ipc: int) -> Bffi:
                 main_overlay_rom_start,
                 main_overlay_rom_end,
                 load_address)
-    
-    with open("private/kig_12_main.bin", "wb") as f:
-        f.write(main_overlay)
 
     overlay_2_load_offset = KIG_OVERLAY_2_LOAD_PATTERN.find(main_overlay)
     if overlay_2_load_offset is None:

@@ -358,10 +358,6 @@ def madden2k2_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("decompressing bootexe...")
     bootexe = madden_v3_decompress(bootexe, bootexe_uncompressed_size)
 
-    with open("private/madden2k2_out.bin", "wb") as f:
-        f.write(bootexe)
-
-
     bootexe_load_address       = 0x80000400 # should always be the case
     bootexe_preamble_address   = bootexe_load_address + (num_files * 4)
 
