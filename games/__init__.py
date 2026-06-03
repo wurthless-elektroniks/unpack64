@@ -26,7 +26,7 @@ from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_
 from .imagineer import simcity_unpack, yakyuuking_unpack, mrc_unpack, fightersdestiny_unpack
 from .locomotive import pennyracers_unpack, transformers_unpack
 from .konami import deadlyarts_unpack, castlevania_unpack
-from .madden import madden64_unpack
+from .madden import madden64_unpack, madden99_unpack, madden2k2_unpack
 from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
@@ -1110,6 +1110,21 @@ GAME_SPECIFIC_UNPACKERS = {
     
     # Madden Football 64 (E) [!]
     "7eaef372a0e0f00a8e0150150686d1c72a87c5232a9ea3b374424275efdad059": madden64_unpack,
+
+    # Madden NFL 99 (U) [!]
+    "e1bc1ce2fe40c4ec803e6eb0bc762bcd0d9d9fb501e9c3c71fb249369506d454": madden99_unpack,
+
+    # Madden NFL 99 (E) [!]
+    "0614ccd5bbe6fa5b40f899ca000505390bf49eb6a13f6c1b053ba827c84309b6": madden99_unpack,
+
+    # Madden NFL 2000 (U) [!]
+    "a5584fd350722f0f1c9792820b9de528665954142ebcee6c236782db8c895822": madden99_unpack,
+
+    # Madden NFL 2001 (U) [!]
+    "f9dc0e73a76ac936b176475bdbb0bc260054223112a32b30ed2f8ee32b4c7a49": madden2k2_unpack,
+
+    # Madden NFL 2002 (U) [!]
+    "1ffc43042b9d374ee121d5c784fb78f6fc2092c5d66344ed0c356b1e091a7b16": madden2k2_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

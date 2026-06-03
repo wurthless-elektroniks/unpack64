@@ -54,49 +54,69 @@ def madden_v1_decompress(input: bytes):
 #
 # Madden v3
 #
-# Currently under construction
-#
 # ----------------------------------------------------------
 
-# 79c
-def _decompress_chunk(chunk: bytes,
-                      output_offset: int,
-                      stackarg_10,
-                      stackarg_14
-                      ):
+class MaddenV3Bitstream(BufferBitstreamReader):
+    def __init__(self,
+                 input_buffer: bytes,
+                 num_bits: int):
+        super().__init__(input_buffer, BitstreamReadOrder.L_TO_R)
+        self._num_bits = num_bits
 
-    # param 4 is always 0x010000?
-    param_4: int = 0x010000
+    def keep_reading(self):
+        return self._num_bits >= 8
+
+    def read_bit_bool(self):
+        self._num_bits -= 1
+        return super().read_bit_bool()
+
+
+# 79c
+#
+# arguments are:
+# $a0       - pointer to start of output buffer
+# $a1       - input pointer
+# $a2       - output offset
+# $a3       - some threshold (hardcoded to 0x010000)
+# 0x10($sp) - number of bits to process? (0x1000 * 8)
+# 0x14($sp) - output buffer size in bytes (not passed here)
+def _v3_decompress_chunk(output_buffer: bytearray,
+                      chunk: bytes,
+                      output_offset: int,
+                      threshold: int,
+                      num_bits: int
+                      ):
 
     # bitstream is read 32 bits at a time, left to right.
     # bitstream resets at the start of each 4k chunk
-    bitstream = BufferBitstreamReader(chunk, BitstreamReadOrder.L_TO_R)
+    bitstream = MaddenV3Bitstream(chunk, num_bits)
 
+    # these values reset on every chunk too
     uVar11 = 2
     uVar12 = 1
 
-    output = bytearray()
-    
-    param_3 = output_offset
-
     # param_3 looks like output offset (NOT output pointer)
 
-    if param_3 == 0:
+    if output_offset == 0:
         if chunk[0] != 0x03:
-            raise RuntimeError("expected 0x03 at start of chunk, but didn't get it")
+            raise RuntimeError("expected 0x03, but didn't get it")
 
-        # advance bitstream by five bytes
+        # advance bitstream by five bytes to skip past the header
         for _ in range(5):
             bitstream.read_bits(8)
 
-    while True:
-        # boundscheck here...
+    while bitstream.keep_reading():
+        if output_offset > len(output_buffer):
+            return output_offset
 
         # if first bit is 1, then copy n bytes directly to output
         if bitstream.read_bit() != 0:
             run_length = bitstream.read_bits(7)
             for _ in range(run_length):
-                output.append(bitstream.read_bits(8))
+                if output_offset >= len(output_buffer):
+                    return output_offset
+                output_buffer[output_offset] = bitstream.read_bits(8)
+                output_offset += 1
             continue
 
         # otherwise, it's backseek time
@@ -108,52 +128,58 @@ def _decompress_chunk(chunk: bytes,
             run_length = (1 << num_zero_bits) | bitstream.read_bits(num_zero_bits)
         run_length = (run_length + 2) & 0xFF
 
-        # some count thing, uVar12 holds the sum
-        while uVar11 <= param_3:
-            uVar11 <<= 1
-            if uVar11 < param_4:
+        # some count thing, uVar12 holds the sum.
+        while uVar11 < output_offset:
+            if uVar11 < threshold:
                 uVar12 += 1
+            uVar11 <<= 1
 
-        uVar8 = ( (1 << ((uVar12 & 0x1F) - 1)) - min(param_3, param_4) ) & 0xFFFFFFFF
+        uVar8 = ( ((1 << (uVar12 & 0x1F)) - 1) - min(output_offset, threshold) ) & 0xFFFFFFFF
 
         if uVar8 == 0xFFFFFFFF:
-            uVar2 = bitstream.read_bits(uVar12)
+            backseek = bitstream.read_bits(uVar12)
         else:
-            uVar2 = bitstream.read_bits(uVar12 - 1)
-            if uVar8 <= uVar2:
-                pass
+            backseek = bitstream.read_bits(uVar12 - 1)
+            if uVar8 <= backseek:
+                backseek = (backseek << 1 | bitstream.read_bit()) - uVar8
         
-        backseek = param_3 - uVar2
-        
+        backseek_offset = output_offset - backseek
         for _ in range(run_length):
-            output.append(output[backseek])
-            backseek += 1
+            if output_offset >= len(output_buffer):
+                return output_offset
 
-    return output
+            output_buffer[output_offset] = output_buffer[backseek_offset]
+            output_offset += 1
+            backseek_offset += 1
+
+    return output_offset
 
 # 410
-def madden_decompress(input: bytes,
-                      output_size: int):
-
+def madden_v3_decompress(input: bytes, output_size: int):
     if output_size == 0:
         return None
 
+    output_buffer = bytearray([0] * output_size)
+
     output_offset = 0
-    output_bytes_left = 0
+    input_bytes_left = len(input)
+    input_pointer = 0
 
-    while output_bytes_left != 0:
-        if output_bytes_left <= 0x1000:
-            output_bytes_left = 0
+    while input_bytes_left != 0:
+
+        if input_bytes_left <= 0x1000:
+            bits_this_chunk = input_bytes_left * 8
+            input_bytes_left = 0
         else:
-            output_bytes_left -= 0x1000
+            bits_this_chunk = 0x1000 * 8
+            input_bytes_left -= 0x1000
         
+        output_offset = _v3_decompress_chunk(output_buffer,
+                             input[input_pointer:],
+                             output_offset,
+                             0x010000,
+                             bits_this_chunk
+                             )
+        input_pointer += 0x1000
 
-
-        _decompress_chunk(param_1, param_2 + output_offset, output_offset, 0x010000)
-        
-        output_offset += 0x1000
-
-
-
-
-    pass
+    return output_buffer

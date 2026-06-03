@@ -71,6 +71,8 @@ class BufferedBits:
         else:
             raise RuntimeError("illegal readorder!")
         
+        self._num_bits_on_buffer -= 1
+
         self._bitbuffer &= ((1 << (self._leftmost_bit + 1)) - 1)
         return bit
 
