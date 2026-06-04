@@ -19,17 +19,6 @@ from .bitbuffer import BufferBitstreamReader, BitstreamReadOrder
 logger = logging.getLogger(__name__)
 
 
-# block at 80000bbc does common backseek/run length decode
-# then execution ends up at 80000e58 via e50/e54
-def _lzea_bbc_common(bitstream: BufferBitstreamReader,
-                     backseek: int,
-                     v0: int):
-    
-    backseek = (backseek | v0)           # in original code e50 adds 1 to s4
-    s1 = bitstream.read_bits_lifo(2) + 4 # +4, but then e54 subtracts 1 from s1
-    # jumps to e50
-    return backseek, s1
-
 def _match_twobits(unmasked, wanted) -> bool:
     return (unmasked & 0b01100000) == wanted
 
@@ -42,19 +31,16 @@ def _match_sixbits(unmasked, wanted) -> bool:
 def _match_sevenbits(unmasked, wanted) -> bool:
     return (unmasked & 0b01111111) == wanted
 
-def _wc98_common_decompress(input: bytes):
-
-    
+def lzea_decompress(input: bytes):
     # first 4 bytes of the buffer are the uncompressed size
     output_size = struct.unpack(">I", input[:4])[0]
-
 
     output = bytearray([0] * output_size)
 
     # bitstream is filled 8 bits at a time, and the output takes the lower
     # 2 bits in order (byte &= 3, input_bits >>= 2),
     # so read order is r-to-l and the output bits will be read last-in-first-out
-    bitstream = BufferBitstreamReader(input, BitstreamReadOrder.R_TO_L)
+    bitstream = BufferBitstreamReader(input[4:], BitstreamReadOrder.R_TO_L)
     
     # s1 ?
     # $s2 = 8-bit bitbuffer
@@ -83,6 +69,11 @@ def _wc98_common_decompress(input: bytes):
             # 80000848: keep adding 0xFF until nonzero is hit, then add that to s1
             v0 = bitstream.read_byte()
             while v0 == 0:
+                if bitstream.eof():
+                    # if execution ends up here it's usually bad news
+                    logger.warning("hit bitstream EOF trying to read runlength, aborting!")
+                    return output
+
                 s1 += 0xFF
                 v0 = bitstream.read_byte()
             
@@ -92,7 +83,7 @@ def _wc98_common_decompress(input: bytes):
             s1 = bitstream.read_bits_lifo(2) + 3
 
             # if path not taken, execution falls through to 8f8
-            if (s1 + 1) == 6:
+            if s1 == 6:
                 # if this path is taken, execution continues from 8c8
                 s1 = bitstream.read_bits_lifo(2) + 6
 
@@ -123,8 +114,9 @@ def _wc98_common_decompress(input: bytes):
             if _match_twobits(uVar3, 0x40):
                 # a64: backseeking up to 0x1FF bytes
                 backseek = (bitstream.read_bits_lifo(2) << 5) | (uVar3 & 0x1F) # in delay slot at a68
-                v0 = bitstream.read_bits_lifo(2) << 7
-                backseek, s1 = _lzea_bbc_common(bitstream, backseek, v0)
+                backseek_hibits = bitstream.read_bits_lifo(2) << 7
+                backseek = (backseek | backseek_hibits) # in original code e50 adds 1 to s4
+                s1 = bitstream.read_bits_lifo(2) + 5
 
                 # execution falls through to 80000e58
             elif _match_twobits(uVar3, 0x20):
@@ -162,9 +154,8 @@ def _wc98_common_decompress(input: bytes):
                 backseek_byte = bitstream.read_byte() << 3
                 backseek_higher_bits = bitstream.read_bits_lifo(2) << 11
             
-                # goto bbc path
-                pass
-
+                backseek = (backseek_higher_bits | backseek_byte | backseek_lobits) # in original code e50 adds 1 to s4
+                s1 = bitstream.read_bits_lifo(2) + 5    # +4, but then e54 subtracts 1 from s1
             elif _match_fourbits(uVar3, 0x70):
                 # bec
                 backseek_lobits = (uVar3 & 7)
@@ -241,6 +232,9 @@ def _wc98_common_decompress(input: bytes):
                 raise RuntimeError(f"illegal backseek control flag: uVar3 {uVar3:02x} (bits {uVar3:08b})")
             # END OF THE HORRIBLY LARGE IF STATEMENT
 
+            # e50 increments backseek (which is done by the backseek + 1 below)
+            # e54 decrements s1 because the original code loops while i >= 0
+
             # 80000e58: apply backseek and output n bytes
             backseek_offset = output_pointer - (backseek + 1)
 
@@ -260,6 +254,6 @@ def _wc98_common_decompress(input: bytes):
             
             # otherwise goto 810 (end of backseek operation(s))
             break
-
         # end of mainloop
+
     return output

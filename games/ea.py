@@ -5,12 +5,14 @@ Electronic Arts games using various bootloaders and compression methods
 import logging
 import struct
 
+from compression.lzea import lzea_decompress
 from compression.refpack import refpack_decompress
 
 from bffi import Bffi,BffiBuilder,BffiSectionType
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
+from sigutil import pick_pattern
 from strutil import extract_cstring
 
 logger = logging.getLogger(__name__)
@@ -270,48 +272,109 @@ def nbalive2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     return builder.build()
 
-
-
 # ----------------------------------------------------------
 #
-# World Cup 98
+# World Cup 98, FIFA 99, Knockout Kings 2000
 #
-# Immediately following the bootexe (ROM 0x016940) is a table of the following values:
-# - 4 bytes ROM address
-# - 4 bytes RAM address (0 if this is the BIGF table entry)
-# - 4 bytes uncompressed size
-# - 4 bytes always zero
-#
-# Each points to a compressed overlay, except for the last entry,
-# which points to a "BIGF" filesystem with all the game resources.
-#
-# Each payload starts with a 24 bit big endian uncompressed size.
-# The decompression routine is entirely different from NHL 99.
-#
-# ----------------------------------------------------------
-
-
-# ----------------------------------------------------------
-#
-# Knockout Kings 2000
-#
-# Same table structure as World Cup 98 (this time in ROM at 0x031c08)
+# Immediately following the bootexe is a table of the following values:
 # - 4 bytes ROM address
 # - 4 bytes RAM address (0 if this is the resource blob)
 # - 4 bytes uncompressed size
 # - 4 bytes always zero
 #
-# The first entry is the main code overlay.
-# The next three are identical data segments (not sure what they mean).
-# The final one is the resource blob, which (likely) contains more overlays.
-#
-# This time the payload starts with a 32 bit big endian uncompressed size.
-# Otherwise, the algorithm looks the same as World Cup 98.
-#
-# FIFA 99: same format but multiple overlays, and last entry is a BIGF
+# These games use the infernal LZEA compression method.
 #
 # ----------------------------------------------------------
 
+WC98_DECOMPRESS_RESOURCE_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x00 lui        v0,0x8001
+        0x8c, 0x42, WILDCARD, WILDCARD,     # +0x04 lw         v0,offset DAT_80013890(v0)
+        0x27, 0xbd, 0xff, 0xe0,             # +0x08 addiu      sp,sp,-0x20
+        0xaf, 0xb0, 0x00, 0x10,             # +0x0C sw         s0,local_10(sp)
+        0x00, 0x80, 0x80, 0x21,             # +0x10 move       s0,a0
+        0xaf, 0xb1, 0x00, 0x14,             # +0x14 sw         s1,local_c(sp)
+        0x00, 0x00, 0x88, 0x21,             # +0x18 clear      s1
+        0x14, 0x40, 0x00, 0x09,             # +0x1C bne        v0,zero,LAB_80000504
+        0xaf, 0xbf, 0x00, 0x18,             # +0x20 _sw        ra,local_8(sp)
+        0x3c, 0x04, 0x00, WILDCARD,         # +0x24 lui        a0,0x1 <-- resource table address in ROM
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x28 addiu      a0,a0,0x6940
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x2C lui        a1,0x8001
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x30 addiu      a1,a1,0x5d40
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x34 jal        cart_read_universal
+    ]) \
+    .const_op32_hi16("res_table_rom_address", 0x24) \
+    .const_op32_lo16("res_table_rom_address", 0x28) \
+    .build()
+
+KOK2K_DECOMPRESS_RESOURCE_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, 0x80, WILDCARD,         # +0x00 lui        v0,0x8003
+        0x8c, 0x43, 0xad, 0x10,             # +0x04 lw         v1,(v0)
+        0x27, 0xbd, 0xff, 0xe0,             # +0x08 addiu      sp,sp,-0x20
+        0xaf, 0xb0, 0x00, 0x10,             # +0x0C sw         s0,local_10(sp)
+        0x00, 0x80, 0x80, 0x21,             # +0x10 move       s0,a0
+        0xaf, 0xb1, 0x00, 0x14,             # +0x14 sw         s1,local_c(sp)
+        0x00, 0x00, 0x88, 0x21,             # +0x18 clear      s1
+        0x10, 0x60, 0x00, 0x06,             # +0x1C beq        v1,zero,LAB_80000504
+        0xaf, 0xbf, 0x00, 0x18,             # +0x20 _sw        ra,local_8(sp)
+        0x24, 0x02, 0x00, 0x01,             # +0x24 li         v0,0x1
+        0x10, 0x62, 0x00, 0x0b,             # +0x28 beq        v1,v0,LAB_80000524
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x2C _lui       a0,0x8003
+        0x08, WILDCARD, WILDCARD, WILDCARD, # +0x30 j          LAB_80000538
+        0x00, 0x00, 0x00, 0x00,             # +0x34 _nop
+        0x3c, 0x04, 0x00, WILDCARD,         # +0x38 lui        a0,0x3 <-- resource table address in ROM
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x3C addiu      a0,a0,0x1c08 
+        0x3c, 0x05, 0x80, WILDCARD,         # +0x40 lui        a1,0x8003
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x44 addiu      a1,a1,0x1008
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x48 jal        cart_read_universal
+    ]) \
+    .const_op32_hi16("res_table_rom_address", 0x38) \
+    .const_op32_lo16("res_table_rom_address", 0x3C) \
+    .build()
+
+def kok2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss-ipc]
+    builder.fix(ipc, bootexe)
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+
+    pattern, decompress_resource_offset = pick_pattern(bootexe,
+                                              [WC98_DECOMPRESS_RESOURCE_PATTERN,
+                                               KOK2K_DECOMPRESS_RESOURCE_PATTERN])
+    if decompress_resource_offset is None:
+        return None
+    
+    logger.info("found EA LZEA resource load/decompress routine at 0x%08x", ipc+decompress_resource_offset)
+
+    consts = pattern.consts(ipc, bootexe, decompress_resource_offset)
+    res_table_rom_address = consts["res_table_rom_address"].get_value()
+    logger.info("overlay/resource table in ROM at 0x%08x", res_table_rom_address)
+
+    while True:
+        rom_address, ram_address, uncompressed_size, _ = \
+            struct.unpack(">IIII", rom.read_bytes(res_table_rom_address, 0x10))
+        
+        if (ram_address >> 24) != 0x80:
+            break
+        res_table_rom_address += 0x10
+
+        logger.info("reading and decompressing overlay: ROM 0x%08x -> RAM 0x%08x",
+                    rom_address,
+                    ram_address)
+        
+        overlay = rom.read_bytes_until_end(rom_address)
+        overlay = lzea_decompress(overlay)
+
+        builder.seg(ram_address, overlay)
+
+    return builder.build()
 
 # ----------------------------------------------------------
 #
@@ -494,3 +557,10 @@ def wcw_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     return builder.build()
 
+# ----------------------------------------------------------
+#
+# FIFA Soccer 64 / FIFA Road to World Cup 98 / J.League Live 64
+#
+# Tiny bootstub loads OVLN/Refpack thing
+#
+# ----------------------------------------------------------

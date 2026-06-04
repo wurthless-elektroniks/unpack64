@@ -10,7 +10,7 @@ from .buckbumble import buckbumble_unpack
 from .daikatana import daikatana_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
-from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack
+from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack, kok2k_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -786,6 +786,24 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # WCW Backstage Assault (U) [!]
     "cf4169a5489d25711fb94e6c716ab5bf00b9aaf742556f5142998e20bffce7e7": wcw_unpack,
+
+    # World Cup 98 (U) (M8) [!]
+    "45f7895bbf19f4f0c0b41e6a32f847236aef08b85d49b8475357ea846c717daa": kok2k_unpack,
+
+    # World Cup 98 (E) (M8) [!]
+    "8f99290db186f35b4dd96562edc12138146157df5f48ca4b389a8cef1afe7a49": kok2k_unpack,
+
+    # FIFA 99 (U) [!]
+    "1299c143c9310cb03aa7424635fb2e148a00173cf21f9baebbd992c03fb90d43": kok2k_unpack,
+
+    # FIFA 99 (E) (M8) [!]
+    "9598ee62390f249f02bd595c8610e5f81a21f71b7d1162f7d1014012ce799db0": kok2k_unpack,
+
+    # Knockout Kings 2000 (U) [!]
+    "e34165bdcfcf6dff6322ec6faf23f59ce38d43417573e6eb41233ebf7309e293": kok2k_unpack,
+
+    # Knockout Kings 2000 (E) [!]
+    "9b01ba8aae55151d3445bab551150c884959af7a4897566946b43f7bd6ae394f": kok2k_unpack,
 
     # ------------------------------------------------------
     # Acclaim games using TLB but no packing
