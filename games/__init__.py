@@ -1161,6 +1161,43 @@ GAME_SPECIFIC_UNPACKERS = {
     "1ffc43042b9d374ee121d5c784fb78f6fc2092c5d66344ed0c356b1e091a7b16": madden2k2_unpack,
 
     # ------------------------------------------------------
+    # Player 1
+    # All are assumed to be single-load until proven otherwise
+    # ------------------------------------------------------
+
+    # Blues Brothers 2000 (U) [!]
+    # Can't find code outside bootexe, game is likely single-load
+    "3ca0ac99c1611125783d474825b9d912b7b2e491d17468b0db6fb29b941fc985": None,
+
+    # Blues Brothers 2000 (E) (M6) [!]
+    # Can't find code outside bootexe, game is likely single-load
+    "2a7540a8cb2d0f2eec24bc99e8c9af505a17f32e3aa2e43394a4ac94867dc2c8": None,
+
+    # Hercules - The Legendary Journeys (U) [!]
+    # Can't find code outside bootexe, game is likely single-load
+    "8c7d23b9d9a349561f922c90aa128d85abf5ccafc696a2bcd36a434738bf72bc": None,
+
+    # Hercules - The Legendary Journeys (E) (M6) [!]
+    # Can't find code outside bootexe, game is likely single-load
+    "655bf0ba5eb75d4a21ddaaaf96d308ff11480eca9124140eb010048033bcf62a": None,
+
+    # Robotron 64 (U) [!]
+    # Likely a single-load game
+    "91d85baeca4b9517e93b3637b52909cee942b09e2fe44a37df9ded17687faddd": None,
+
+    # Robotron 64 (E) [!]
+    # Likely a single-load game
+    "18e582cfc79c8659d06664459bee45d5892291a9264ffda0652cb36c0d548aa6": None,
+
+    # Milo's Astro Lanes (U) [o1]
+    # Likely a single-load game
+    "2399cfc9142891a262579f6018b3269137dba52fa333c64e8d7edbd3a6a204c6": None,
+
+    # Milo's Astro Lanes (E) [o1]
+    # Likely a single-load game
+    "71384a0e942c4fb5d8b138fff47880372af68a4ab88cae8e5249ab968edfb8cb": None,
+
+    # ------------------------------------------------------
     # Confirmed single-load games
     #
     # Any game that does not need to be unpacked should be blacklisted
