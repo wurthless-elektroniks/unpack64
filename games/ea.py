@@ -564,3 +564,59 @@ def wcw_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # Tiny bootstub loads OVLN/Refpack thing
 #
 # ----------------------------------------------------------
+
+FIFA64_ENTRY_POINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xa0,             # +0x00 addiu      sp,sp,-0x60
+        0xaf, 0xbf, 0x00, 0x1c,             # +0x04 sw         ra,local_44(sp)
+        0xaf, 0xb0, 0x00, 0x18,             # +0x08 sw         s0,local_48(sp)
+        0x3c, 0x04, 0x00, WILDCARD,         # +0x0C lui        a0,0x67 <-- OVLN ROM address
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x10 addiu      a0,a0,-0x1a60
+        0x00, 0x00, 0x80, 0x25,             # +0x14 or         s0,zero,zero
+        0xaf, 0xa0, 0x00, 0x28,             # +0x18 sw         zero,local_38(sp)
+        0xaf, 0xa4, 0x00, 0x20,             # +0x1C sw         a0,local_40(sp)
+        0x27, 0xa5, 0x00, 0x40,             # +0x20 addiu      a1,sp,0x40
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x24 jal        FUN_80000450
+    ]) \
+    .const_op32_hi16("ovln_rom_address", 0x0C) \
+    .const_op32_lo16("ovln_rom_address", 0x10) \
+    .build()
+
+def fifa64_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss-ipc]
+    builder.fix(ipc, bootexe)
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    entry_point_offset = preamble.crt_entry_point() - ipc
+
+    if FIFA64_ENTRY_POINT_PATTERN.compare(bootexe, entry_point_offset) is False:
+        return None
+    
+    logger.info("found EA FIFA 64 OVLN loader")
+
+    consts = FIFA64_ENTRY_POINT_PATTERN.consts(ipc, bootexe, entry_point_offset)
+    main_ovln_rom_address = consts["ovln_rom_address"].get_value()
+
+    logger.info("main segment OVLN in ROM at 0x%08x", main_ovln_rom_address)
+
+    load_address, entry_point, main_ovln, main_ovln_size = \
+        _ovln_read(rom, main_ovln_rom_address)
+
+    if None in [ load_address, entry_point, main_ovln, main_ovln_size ]:
+        logger.error("failed to read main OVLN!")
+
+    logger.info("main OVLN: ROM 0x%08x-0x%08x -> RAM 0x%08x, entry point at 0x%08x",
+                main_ovln_rom_address,
+                main_ovln_rom_address+main_ovln_size,
+                load_address,
+                entry_point)
+    
+    builder.fix(load_address, main_ovln)
+    builder.initial_program_counter(entry_point)
+    
+    return builder.build()

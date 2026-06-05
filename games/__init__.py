@@ -10,7 +10,8 @@ from .buckbumble import buckbumble_unpack
 from .daikatana import daikatana_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
-from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack, kok2k_unpack
+from .ea import nhl99_unpack, nbalive2k_unpack, wcw_unpack, kok2k_unpack, \
+                fifa64_unpack
 from .ecwwwf import ecwwf_unpack
 from .edgeofreality import erz_unpack
 from .excitebike import excitebike_unpack
@@ -804,6 +805,21 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Knockout Kings 2000 (E) [!]
     "9b01ba8aae55151d3445bab551150c884959af7a4897566946b43f7bd6ae394f": kok2k_unpack,
+
+    # FIFA Soccer 64 (U) (M3) [!]
+    "4721c09d2f5e33c278dd7bf7b13037d95c54cc357d1c9f71ccde91006f7780a4": fifa64_unpack,
+
+    # FIFA Soccer 64 (E) (M3) [!]
+    "f00e3398a860839631b1e06ad26454029bf0d35b3fa27703fdbe58dc1e89051f": fifa64_unpack,
+
+    # J.League Live 64 (J) [!]
+    "8472aae0167eceac08923de4b1f21d7a1302883cc0489ba03fe7d4d5e0db370d": fifa64_unpack,
+
+    # FIFA - Road to World Cup 98 (U) (M7) [!]
+    "aa6f85b86a40b9388d99324e7ff58c3df67ce666f2dbc5cf01a31357b4f7ccc2": fifa64_unpack,
+
+    # FIFA - Road to World Cup 98 (E) (M7) [!]
+    "baee4f4a6b528eab242f09885c518af282fb02175c622812ecb82d58c79d8849": fifa64_unpack,
 
     # ------------------------------------------------------
     # Acclaim games using TLB but no packing
