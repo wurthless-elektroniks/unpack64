@@ -137,6 +137,9 @@ def unpack_rom(rom: N64Rom,
         unpackers = set(GAME_SPECIFIC_UNPACKERS.values())
 
         for unpacker in unpackers:
+            if unpacker is None:
+                continue
+            
             logger.info("try unpack function: %s", unpacker.__name__)
             unpacked = unpacker(rom, bootexe_entry_point)
             if unpacked is not None:

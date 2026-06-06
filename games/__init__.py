@@ -21,6 +21,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
+from .hudson import marioparty_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
@@ -1196,6 +1197,37 @@ GAME_SPECIFIC_UNPACKERS = {
     # Milo's Astro Lanes (E) [o1]
     # Likely a single-load game
     "71384a0e942c4fb5d8b138fff47880372af68a4ab88cae8e5249ab968edfb8cb": None,
+
+    # ------------------------------------------------------
+    # Hudson Soft
+    # ------------------------------------------------------
+
+    # Mario Party (U) [!]
+    "ca4fb9605fff4884e9ba4319dfa23d96b7347ce88ffb8d04e6c25a3a9ff9ed6a": marioparty_unpack,
+
+    # Mario Party (J) [!]
+    "2fed99bec5458b07900bbc58cbacf0bbec46b3250ac35de00100310d7265c09d": marioparty_unpack,
+
+    # Mario Party (E) (M3) [!]
+    "48e6cbb83735ec4e4662866fa99cd6895da97a3b90814f5078bfabd132cbfb9a": marioparty_unpack,
+
+    # Mario Party 2 (U) [!]
+    "0b7b2ec3bd2ac8713b4c43f74a634285a720779964ee2658f7ad2dfa97b33576": marioparty_unpack,
+
+    # Mario Party 2 (J) [!]
+    "bae1720d257791b58fc29189241553d64dece6ce241a6c2af275bf77d25bb96f": marioparty_unpack,
+
+    # Mario Party 2 (E) (M5) [!]
+    "4fe18c71dba3520dab2a0618fdd949cf0869579325ea2ecfd2040337daff3863": marioparty_unpack,
+
+    # Mario Party 3 (U) [!]
+    "a08cbd6a4f40d15cbd8bcdee644f80cdfb843e06d569d1334bcd49f23262855a": marioparty_unpack,
+
+    # Mario Party 3 (J) [!]
+    "bdf532f2f9c927a4398a1657b5e9ecfb34d416db68e791c743929ef5d0628f69": marioparty_unpack,
+
+    # Mario Party 3 (E) (M4) [!]
+    "23a33bd5ec1ef62f6888e0d7b68f56ffb36da83025be789ca1170da43266242f": marioparty_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
