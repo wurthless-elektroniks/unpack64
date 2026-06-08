@@ -21,7 +21,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
-from .hudson import marioparty_unpack
+from .hudson import marioparty_unpack, bomberman64_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
@@ -1228,6 +1228,15 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Mario Party 3 (E) (M4) [!]
     "23a33bd5ec1ef62f6888e0d7b68f56ffb36da83025be789ca1170da43266242f": marioparty_unpack,
+
+    # Bomberman 64 (U) [!]
+    "e6da7c26127788cd894b88b71cc055ff9dec0d0f4f8e10d9b15b40153af2b52a": bomberman64_unpack,
+
+    # Baku Bomberman (J) [!]
+    "7a36567a0a26dfdcb6f24eb454be9f9cd815cf96d6660867845e8a55434084cf": bomberman64_unpack,
+
+    # Bomberman 64 (E) [!]
+    "412112a3a7dbd712c9d7420028144b47691768aa6a26846c897abae8c9a69157": bomberman64_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

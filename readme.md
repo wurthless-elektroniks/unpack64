@@ -144,6 +144,17 @@ Expansion Pak games that don't officially support the Expansion Pak:
 - South Park: Chef's Luv Shack: Uses Acclaim's contemporary framework and one-shot
   loads overlays if the Expansion Pak is present. 
 
+The absolute worst games to deal with:
+
+- Bomberman 64: Nonsensical and overly complicated code overlay loader scheme,
+  plus a vector handler installed at 0x00000000 (yes, at the null pointer)
+  for common system calls.
+
+Other crap to note:
+- Many games do not correctly clear the instruction cache when swapping in overlays
+  or running decompressed code. Turok: Dinosaur Hunter is an interesting example, where
+  osInvalICache() is only accessible (and called) once the main code has been decompressed.
+
 ## What does all of this mean for decomp projects?
 
 Probably not much. Most decomp projects are already far enough along so this project won't
