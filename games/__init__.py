@@ -21,7 +21,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
-from .hudson import marioparty_unpack, bomberman64_unpack
+from .hudson import marioparty_unpack, bomberman64_unpack, bomberman2_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack
@@ -1237,6 +1237,12 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Bomberman 64 (E) [!]
     "412112a3a7dbd712c9d7420028144b47691768aa6a26846c897abae8c9a69157": bomberman64_unpack,
+
+    # Bomberman 64 - The Second Attack! (U) [!]
+    "96f641120471a1d5dab848dffdeeeeb7c4002333a06763ae20e14af72126efd8": bomberman2_unpack,
+
+    # Baku Bomberman 2 (J) [!]
+    "45c622c2e6d65ceb255c531b499c78d0e1880c32e9e9d7b804c617549f3da7cb": bomberman2_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

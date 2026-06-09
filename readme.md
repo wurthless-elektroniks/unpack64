@@ -126,6 +126,7 @@ Games using virtual memory:
 - Star Wars Episode 1: Battle for Naboo
 - South Park
 - South Park: Chef's Luv Shack
+- Turok: Rage Wars
 - Turok 2: Seeds of Evil
 - Turok 3: Shadow of Oblivion
 

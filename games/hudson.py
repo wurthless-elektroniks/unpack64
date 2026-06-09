@@ -330,6 +330,12 @@ def _bm64_suboverlay_extract_entries(blob: bytes,
                                      blob_base: int,
                                      num_entries: int):
     
+
+    # bomberman 64 uses 0x2008, bomberman 2 uses 0x8008
+    data_start_offset = struct.unpack(">I", blob[:4])[0]
+
+    lzssheader_size = 8 if data_start_offset == 0x8008 else 4
+   
     read_offset = 0x10
 
     entries = {}
@@ -348,8 +354,8 @@ def _bm64_suboverlay_extract_entries(blob: bytes,
             start_offset = finger_0
             end_offset   = finger_0 + finger_1
         
-        start_offset += 0x2008
-        end_offset += 0x2008
+        start_offset += data_start_offset
+        end_offset += data_start_offset
 
         logger.info("blob entry %d = blob 0x%08x-0x%08x / ROM 0x%08x-0x%08x",
                     i,
@@ -362,7 +368,7 @@ def _bm64_suboverlay_extract_entries(blob: bytes,
         decompressed_size = struct.unpack(">I", entry[:4])[0]
         logger.info("decompressed size of entry is: %d", decompressed_size)
 
-        entry = lzssbomberman_decompress(entry[4:], decompressed_size)
+        entry = lzssbomberman_decompress(entry[lzssheader_size:], decompressed_size)
 
         entries[i] = entry
 
@@ -376,22 +382,22 @@ def _bm64_suboverlay_extract_entries(blob: bytes,
 def _bm64_parse_sub_overlay_table(sub_overlay_table: bytes):
     sub_overlay_base_blob_addresses = {}
     for i in range(0x800):
-        sub_overlay_page      = sub_overlay_table[(i * 2)]
-        sub_overlay_page_size = sub_overlay_table[(i * 2) + 1]
+        sub_overlay_page     = sub_overlay_table[(i * 2)]
+
+        # should be always be 0 for bm64
+        # for bomberman 2 it will either be 0 or 0x20
+        sub_overlay_subpage  = sub_overlay_table[(i * 2) + 1]
         
         if sub_overlay_page == 0:
             # it's not wired
             continue
         
-        if sub_overlay_page_size != 0:
-            # should ALWAYS be zero (=0x020000 bytes)
-            raise RuntimeError("sub overlay pagesize was NOT 0")
-        
         # that's just the base page address - sometimes the page size is more than 128k!
-        sub_overlay_base_blob_addresses[i] = sub_overlay_page * 0x020000
+        sub_overlay_base_blob_addresses[i] = (sub_overlay_page * 0x020000) + (sub_overlay_subpage * 0x800)
     return sub_overlay_base_blob_addresses
 
-def _bm64_init_tlb(zeropage_address: int) -> BffiTlb:
+def _bm64_init_tlb(entryhi: int,
+                   zeropage_address: int) -> BffiTlb:
     if (zeropage_address & 0xFFF) != 0:
         raise RuntimeError("zeropage address not 4kbytes aligned")
 
@@ -407,7 +413,7 @@ def _bm64_init_tlb(zeropage_address: int) -> BffiTlb:
 
     entry_00 = BffiTlbEntry()
     entry_00.pagemask(0) # 4kbytes page
-    entry_00.entryhi(0) # at 0x00000000
+    entry_00.entryhi(entryhi) # at 0x00000000 or 0x10000000
     entry_00.entrylo0( tlb_pack_entrylo(zeropage_address & 0x00FFFFFF, 0x1F) )
     entry_00.entrylo1( 1 )
     tlb.entry(0x00, entry_00)
@@ -416,6 +422,63 @@ def _bm64_init_tlb(zeropage_address: int) -> BffiTlb:
     tlb.context(0)
 
     return tlb
+
+def _bm64_parse_mapping_table(blob: bytes):
+    blobdata_start_offset, _, should_be_zero, mapping_table_end_offset = \
+            struct.unpack(">IIII", blob[0x00:0x10])
+    
+    if blobdata_start_offset not in [ 0x2008, 0x8008 ]:
+        raise RuntimeError(f"invalid blobdata start offset: {blobdata_start_offset:08x}")
+
+    if should_be_zero != 0:
+        raise RuntimeError("should_be_zero was NOT zero!")
+        
+    mapping_table = blob[blobdata_start_offset:blobdata_start_offset+mapping_table_end_offset]
+    
+    num_suboverlays = mapping_table[0]
+    logger.info("suboverlay mapping table has %d entries", num_suboverlays)
+
+    expected_mapping_table_size = 1 + (num_suboverlays * 3)
+    if expected_mapping_table_size != len(mapping_table):
+
+        if (expected_mapping_table_size & 1) == 1:
+            expected_mapping_table_size += 1
+
+        if expected_mapping_table_size != len(mapping_table):
+            logger.info("num_overlays field was lying to us!! (%d != %d)",
+                        (1 + num_suboverlays*3),
+                        len(mapping_table))
+            
+            num_suboverlays = int((len(mapping_table)-1) / 3)
+            logger.info("overriding num_suboverlays -> %d", num_suboverlays)
+
+    local_to_global_mappings = {}
+    for i in range(num_suboverlays):
+        expected_entry_id = i + 1
+
+        suboverlay_guid, entry_id = struct.unpack(">HB", mapping_table[1 + (i*3): 1 + (i*3) + 3])
+        if entry_id != expected_entry_id:
+            # they should be in ascending order or else something has gone wrong
+            raise RuntimeError(f"entry_id should be {i} but was {entry_id}")
+
+        local_to_global_mappings[i] = suboverlay_guid
+    
+    return local_to_global_mappings
+
+def _bm64_assert_local_to_global_mappings_valid(
+        local_to_global_mappings: dict,
+        sub_overlay_base_blob_addresses: dict,
+        sub_overlay_must_match_address: int
+    ):
+    for local_id,global_id in local_to_global_mappings.items():
+        if global_id not in sub_overlay_base_blob_addresses:
+            raise RuntimeError("suboverlay guid {global_id:04x} was not registered in the suboverlay table!")
+        
+        if sub_overlay_base_blob_addresses[global_id] != sub_overlay_must_match_address:
+            raise RuntimeError("suboverlay guid {global_id:04x} is stored in the wrong suboverlay blob! "+
+                                f"(should be {sub_overlay_must_match_address:08x}, was {sub_overlay_base_blob_addresses[global_id]:08x})")
+
+        logger.info("validated guid entry %04x OK: blob %08x entry %d", global_id, sub_overlay_must_match_address, local_id)
 
 def bomberman64_unpack(rom: N64Rom, ipc: int) -> Bffi:
     preamble = identify_preamble(rom.boot_exe(), ipc)
@@ -455,7 +518,7 @@ def bomberman64_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     zeropage = rom.read_bytes(zeropage_rom_start_address, zeropage_rom_end_address-zeropage_rom_start_address)
 
-    builder.initial_tlb(_bm64_init_tlb(zeropage_load_address))
+    builder.initial_tlb(_bm64_init_tlb(0x00000000, zeropage_load_address))
     builder.fix(0, zeropage)
 
     mainloop_offset = BM64_MAINLOOP_PATTERN.find(bootexe)
@@ -595,6 +658,160 @@ def bomberman64_unpack(rom: N64Rom, ipc: int) -> Bffi:
             overlays_dumped.append(local_to_global_mappings[i])
 
     # final pass: check that we've dumped all the overlays we need
+    missing_count = 0
+    for uid, blob_address in sub_overlay_base_blob_addresses.items():
+        if uid not in overlays_dumped:
+            logger.warning("overlay not dumped! uuid %04x, check blob 0x%08x", uid, blob_address)
+            missing_count += 1
+
+    logger.info("dumped %d suboverlays, %d still missing (might not be present)", len(overlays_dumped), missing_count)
+
+    return builder.build()
+
+# ----------------------------------------------------------------------
+#
+# Bomberman 64 - The Second Attack
+# 
+# This is a "one step forward, two steps back" story. For starters, they've
+# unified the boot and main segments into one bootexe so there's no need to load
+# more segments later. The zeropage crap returns, but is more sensibly mapped to
+# 0x10000000 this time. However, this game ends up using the TLB for much more
+# than a syscall-like handler this time.
+#
+# Boot segment:
+# - 80000698 is the readcart routine (same args as bm64)
+# - 80000450 loads the zerojump handler to 0x801D0000. Unlike BM64 they instead
+#            map the zerojump page to 0x10000000.
+# - 80002730 is lzssbomberman decompress, taking params $a0 = input file handle,
+#            $a1 = output pointer, $a2 = decompressed size
+# - 800024c0 is the suboverlay load routine.
+# - 80002228 loads the suboverlay table from ROM 0x0FF000 to RAM.
+# - 800026ec swaps a new suboverlay in at 0x80250000. It's declared as a
+#            zerojump routine. Since all overlays seem to load to fixed addresses,
+#            I'm not sure if this is ever used.
+# - 800516bc allocates TLB entries in the 0x40000000~0x5FFFFFFF and loads overlays there.
+# - 80051630 tests if the module (which loads in TLB space) can be loaded to TLB-mapped space.
+#            $a0 = number of 8kbyte pages, $a1 = where to load it to.
+# - 80051168 looks for a free TLB entry and wires it.
+#
+# Compression can either be lzssbomberman or Yay0. Detecting Yay0 is simple,
+# just look at the first word and compare it to 'Yay0'. The suboverlays however
+# will *ALWAYS* be lzssbomberman.
+#
+# Suboverlays are loaded to TLB-mapped space. Each suboverlay starts with the instruction sequence
+# "lui v0,XXXX / jr ra / addiu v0,v0,XXXX" which returns the entry point for that module.
+# Extracting the uppermost 8 bits of that 32-bit word should tell you where it loads
+# without having to trace through all the overlay loader code.
+#
+# The lzssbomberman header has changed slightly. The first four bytes of the compressed data
+# are still the uncompressed size in bytes, but that is followed by another four bytes containing
+# the sizeof some extended data. That extra word doesn't seem to be used by the game; the loader
+# code will just fseek() past it.
+#
+# ----------------------------------------------------------------------
+
+BOMBERMAN2_SUB_OVERLAY_TABLE_READ_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x04, 0x80, WILDCARD,         # lui        a0,0x800f
+        0x14, 0x4f, 0x00, 0x08,             # bne        v0,t7,LAB_80002290
+        0x24, 0x84, WILDCARD, WILDCARD,     # _addiu     a0,a0,-0xdb0
+        0x3c, 0x06, 0x00, 0x0f,             # lui        a2,0xf
+        0x34, 0xc6, 0xf0, 0x00,             # ori        a2,a2,0xf000
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # jal        readcart
+        0x24, 0x05, 0x10, 0x00,             # _li        a1,0x1000
+    ]) \
+    .build()
+
+# all suboverlays will start with this.
+# we can grab the TLB base offset from there
+BOMBERMAN2_SUB_OVERLAY_ENTRYPOINT_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, WILDCARD, WILDCARD, # lui        v0,0x4300
+        0x03, 0xe0, 0x00, 0x08,         # jr         ra
+        0x24, 0x42, WILDCARD, WILDCARD, # _addiu     v0,v0,0xf50
+    ]) \
+    .const_op32_hi16("v0_address", 0x00) \
+    .const_op32_lo16("v0_address", 0x08) \
+    .build()
+
+def bomberman2_unpack(rom: N64Rom, ipc: int) -> Bffi:
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    builder = BffiBuilder()
+    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss-ipc]
+
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.fix(ipc, bootexe)
+
+    if BOMBERMAN2_SUB_OVERLAY_TABLE_READ_PATTERN.find(bootexe) is None:
+        return None
+    
+    logger.info("found Bomberman 2 suboverlay table load")
+
+    # TODO: de-copypaste this
+    zeropage_init_offset = BM64_ZEROPAGE_INIT_PATTERN.find(bootexe)
+    if zeropage_init_offset is None:
+        logger.error("can't find zeropage load/init function")
+        return None
+    
+    consts = BM64_ZEROPAGE_INIT_PATTERN.consts(ipc, bootexe, zeropage_init_offset)
+    zeropage_load_address      = consts["zeropage_load_address"].get_value()
+    zeropage_rom_start_address = consts["zeropage_rom_start_address"].get_value()
+    zeropage_rom_end_address   = consts["zeropage_rom_end_address"].get_value()
+
+    logger.info("zeropage in ROM 0x%08x-0x%08x, loads to 0x%08x",
+                zeropage_rom_start_address,
+                zeropage_rom_end_address,
+                zeropage_load_address)
+    
+    zeropage = rom.read_bytes(zeropage_rom_start_address, zeropage_rom_end_address-zeropage_rom_start_address)
+
+    builder.initial_tlb(_bm64_init_tlb(0x10000000, zeropage_load_address))
+    builder.fix(0, zeropage)
+
+    # suboverlay table is at 0x0FF000. let's read it
+    suboverlay_table = rom.read_bytes(0x0FF000, 0x1000)
+    sub_overlay_base_blob_addresses = _bm64_parse_sub_overlay_table(suboverlay_table)
+    logger.info("found %d suboverlay blobs", len(set(sub_overlay_base_blob_addresses.values())))
+
+    overlays_dumped = []
+
+    for suboverlay_blob_address in set(sub_overlay_base_blob_addresses.values()):
+        blob = rom.read_bytes(suboverlay_blob_address, 0x040000)
+        local_to_global_mappings = _bm64_parse_mapping_table(blob)
+
+        _bm64_assert_local_to_global_mappings_valid(local_to_global_mappings,
+                                                    sub_overlay_base_blob_addresses,
+                                                    suboverlay_blob_address)
+        
+        # mappings are valid, let's dump some overlays
+        suboverlay_entries = _bm64_suboverlay_extract_entries(blob,
+                                         suboverlay_blob_address,
+                                         len(local_to_global_mappings.keys()))
+        
+        for local_id, data in suboverlay_entries.items():
+            global_id = local_to_global_mappings[local_id]
+
+            # detect load address
+            # each should have a lui v0/jr $ra/addiu $v0
+            if BOMBERMAN2_SUB_OVERLAY_ENTRYPOINT_PATTERN.compare(data) is False:
+                raise RuntimeError("sub overlay did not start with expected lui/jr ra/addiu sequence")
+            
+            consts = BOMBERMAN2_SUB_OVERLAY_ENTRYPOINT_PATTERN.consts(0, data)
+            v0_address = consts["v0_address"].get_value()
+            suboverlay_load_address = v0_address & 0xFF000000
+
+            logger.info("suboverlay %04x loads to 0x%08x (entry point: 0x%08x)",
+                        global_id, 
+                        suboverlay_load_address,
+                        v0_address)
+            builder.seg(suboverlay_load_address, data, segment_id=global_id)
+            overlays_dumped.append(global_id)
+    
     missing_count = 0
     for uid, blob_address in sub_overlay_base_blob_addresses.items():
         if uid not in overlays_dumped:
