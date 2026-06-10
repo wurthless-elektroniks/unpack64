@@ -5,6 +5,7 @@ Game-specific unpacker drivers.
 from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack, \
                      shadowman_unpack
 from .bam import bam99_unpack
+from .bomberman import bomberman64_unpack, bomberman2_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .buckbumble import buckbumble_unpack
 from .daikatana import daikatana_unpack
@@ -21,7 +22,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
-from .hudson import marioparty_unpack, bomberman64_unpack, bomberman2_unpack
+from .hudson import marioparty_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
 from .iguanatlb import allstar2k_unpack, nbajam2k_unpack, chef_unpack, nflqbc99_unpack

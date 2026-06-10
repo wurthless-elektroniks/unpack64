@@ -1,5 +1,9 @@
 '''
-LZSS variant used by Bomberman 64
+Hudson's LZSS variant 
+
+Used by:
+- Bomberman 64
+- Let's Smash / Centre Court Tennis
 
 See also: https://github.com/Bomberhackers/bm64/blob/master/tools/bm64decompress.cpp
 '''
@@ -8,7 +12,8 @@ LZSS_N = 1024
 LZSS_F = 66
 THRESHOLD = 2
 
-def lzssbomberman_decompress(buffer: bytes, output_size: int) -> bytes:
+def lzssbomberman_decompress(buffer: bytes,
+                             output_size: int) -> bytes:
     text_buf = bytearray( [0] * (LZSS_N + LZSS_F - 1))
     flags    = 0
     buffer_pos = 0
@@ -71,6 +76,9 @@ def lzssbomberman_decompress(buffer: bytes, output_size: int) -> bytes:
                 r += 1
                 r &= (LZSS_N-1)
 
+        # bomberman 64 compiler optimization moves flag shift down here.
+        # let's smash puts it at the top of the loop, but since the flags will be 0
+        # on the first pass through the loop, it really doesn't matter
         flags >>= 1
 
     return output
