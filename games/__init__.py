@@ -8,6 +8,7 @@ from .bam import bam99_unpack
 from .bomberman import bomberman64_unpack, bomberman2_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
 from .buckbumble import buckbumble_unpack
+from .culturebrain import hamster64_unpack
 from .daikatana import daikatana_unpack
 from .dma import sssv_unpack, bodyharvest_unpack
 from .dualheroes import dualheroes_unpack
@@ -1244,6 +1245,13 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Baku Bomberman 2 (J) [!]
     "45c622c2e6d65ceb255c531b499c78d0e1880c32e9e9d7b804c617549f3da7cb": bomberman2_unpack,
+
+    # ------------------------------------------------------
+    # Culture Brain
+    # ------------------------------------------------------
+    
+    # Hamster Monogatari 64 (J) [!]
+    "8ebdd2ca91df12f73fb42845e07571ed746ad89d4d648ef11c58c14a0d6b0118": hamster64_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games

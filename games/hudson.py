@@ -132,3 +132,16 @@ def marioparty_unpack(rom: N64Rom, ipc: int) -> Bffi:
 # but too early to tell...
 #
 # ----------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------
+#
+# Getter Love!!
+#
+# Resource blobs are headered the same as the Bomberman games,
+# but they don't seem to use compression.
+#
+# No obvious code overlay loaders here, might be a single load game,
+# but too early to tell...
+#
+# ----------------------------------------------------------------------
