@@ -35,7 +35,7 @@ from .mariotennis import mariotennis_unpack
 from .midway import sfrush_unpack, rush2_unpack, calispeed_unpack, \
                     cruisnusa_unpack, cruisnexotica_unpack
 from .mspacman import mspacman_unpack
-from .nintendo import sm64_unpack, drmario_unpack
+from .nintendo import sm64_unpack, drmario_unpack, mariokart_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .pm64 import pm64_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
@@ -699,6 +699,18 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Dr. Mario 64 (U) [!]
     "bb2c0dec0a8287ad256929563d0509801c2f239df883c1cf52cab05b23bd77b6": drmario_unpack,
+
+    # Mario Kart 64 (U) [!]
+    "d6b8538dd63f0132ecb2856e7d32816ed3c30e3e479aecd23cf83fb6ba17a5da": mariokart_unpack,
+
+    # Mario Kart 64 (J) (V1.0) [!]
+    "9231d689bcf0986a78a9e7505bde3c04dd38083cc94efc66591a1208b0d50371": mariokart_unpack,
+
+    # Mario Kart 64 (E) (V1.0) [!]
+    "b98b2944c896f6e007876a9309b6d05d24299678b137106dd49fe357cf291e62": mariokart_unpack,
+
+    # Mario Kart 64 (E) (V1.1) [!]
+    "8d9d2a68bbc5e9512200cab281b6d98c1d49e1028c092e3fb821ae4076e1ce6d": mariokart_unpack,
 
     # ------------------------------------------------------
     # DMA Design
