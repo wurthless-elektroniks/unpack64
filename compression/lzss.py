@@ -1,5 +1,5 @@
 '''
-LZSS as used by Extreme-G
+LZSS as used by Extreme-G and many many other N64 games
 Identical to Haruhiko Okamura's implementation, so we reuse that here.
 '''
 
@@ -7,8 +7,22 @@ LZSS_N = 4096
 LZSS_F = 18
 THRESHOLD = 2
 
-def lzss_decompress(buffer: bytes) -> bytes:
-    text_buf = bytearray( [0] * (LZSS_N + LZSS_F - 1))
+def lzss_decompress(buffer: bytes,
+                    textbuffer_fill_char: int = 0,
+                    max_output_length: int = 0) -> bytes:
+    '''
+    Decompress a LZSS-compressed buffer.
+
+    Inputs:
+    - buffer: The input buffer to read from.
+    - textbuffer_fill_char: A hexadecimal character to fill the initial text buffer with.
+      In Haruhiko Okamura's reference implementation, this character is 0x20 (whitespace).
+      Default in this implementation is 0.
+    - max_output_length: If not zero, stop decompression when we have written this
+      number of bytes. Default is 0 (decompress until we hit end of input buffer).
+    '''
+    
+    text_buf = bytearray( [textbuffer_fill_char] * (LZSS_N + LZSS_F - 1))
     flags    = 0
     buffer_pos = 0
     c = None
@@ -48,6 +62,9 @@ def lzss_decompress(buffer: bytes) -> bytes:
             buffer_pos += 1
 
             output.append(c)
+            if max_output_length != 0 and len(output) >= max_output_length:
+                return output
+
             text_buf[r] = c
             r += 1
             r &= (LZSS_N - 1)
@@ -70,6 +87,10 @@ def lzss_decompress(buffer: bytes) -> bytes:
             for k in range(j + 1):
                 c = text_buf[(i + k) & (LZSS_N-1)]
                 output.append(c)
+
+                if max_output_length != 0 and len(output) >= max_output_length:
+                    return output
+                
                 text_buf[r] = c
                 r += 1
                 r &= (LZSS_N-1)

@@ -1,49 +1,15 @@
 '''
-LZH compression
+LZH variant used by Hexen
 
-Based on Haruyasu Yoshizaki's implementation
-See also https://github.com/msmiley/lzh/blob/master/src/lzh.c
+Differences:
+- LZH_F has been changed to 128
 
-About the Star Wars - Shadows of the Empire variant...
+- Bitstream is no longer consistently left-to-right as in stock LZH.
+  When decoding a character, bits are read one at a time, right-to-left.
+  When decoding distance, we keep the lowest n bits of the bitstream,
+  so those will be output left-to-right in an otherwise right-to-left bitstream.
 
-Zoinkity's notes from https://www.romhacking.net/forum/index.php?topic=40627.0
-
-    SotE uses variants of two--lzhuff and lzss [...]
-
-    They're slightly modified, what you call "ringless ring" types.
-    The algo itself is the same, but instead of looking at a dedicated ring buffer
-    that is updated every write this reads back through the last 4KB of output.
-    A proper ringless type uses an offset back from the current address (cur - 14),
-    and a ringless ring uses an actual address (byte 14 of the file).
-
-    Problem is they buggered both up.
-
-    For LZHUFF, the ring is too small.  Pass the size as 0xFC2.
-    That's 0x1000 for the correct size, minus lookahead (60),
-    minus threshold (2, the minimum dictionary length).
-
-d_code at 80001cc0
-d_len at 80001dc0
-
-work vars:
-- 80001c84 = output pointer
-- 80001c88 = input pointer
-- 80001c90 = getbuf, cleared to 0 on state init
-- 80001c94 = getlen, cleared to 0 on state init
-- 80001cb4 = pointer to freq
-- 80001cb8 = pointer to prnt (parent node pointers)
-- 80001cbc = pointer to son (child node pointers)
-
-functions:
-80000e64 = Decode()
-    - text_buf is not used here
-800006f4 = StartHuff() (second loop seems modified or unrolled)
-80000ce8 = ?
-
-- a LOT of functions are inlined in the mainloop
-
-Compressed payload is copied to 80300000 and decompressed to 80001EC0,
-after which 80300000 is wiped and execution starts at 800174b0
+See also: https://github.com/Erick194/HexenN64Tool/blob/main/src/HexenLZHuff.cpp
 '''
 
 import logging
@@ -51,15 +17,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 LZH_N = 4096
-LZH_F = 60
+LZH_F = 128
 LZH_THRESHOLD = 2
-LZH_N_CHAR = 256 - LZH_THRESHOLD + LZH_F # should be 314
+LZH_N_CHAR = 256 - LZH_THRESHOLD + LZH_F
 LZH_T = LZH_N_CHAR * 2 - 1
 LZH_R = LZH_T-1
 LZH_MAX_FREQ = 0x8000
 
 LZH_SOTE_MAX_BACKSEEK = LZH_N - LZH_F - LZH_THRESHOLD
 
+# identical to stock lzh
 D_CODE = bytes([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -95,6 +62,7 @@ D_CODE = bytes([
     0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
 ])
 
+# identical to stock lzh
 D_LEN = bytes([
     0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
     0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
@@ -133,13 +101,11 @@ D_LEN = bytes([
 def _uint16(x):
     return x & 0xFFFF
 
-class LzhState:
-    '''
-    Common LZH state management class for reading inputs/outputs.
-    '''
+class LzHexenState:
     def __init__(self, input_buffer: bytes):
         self._bitbuffer = 0
         self._num_bits_on_buffer = 0
+        self._bit_counter = 0
         self._input_buffer = input_buffer
         self._input_offset = 0
 
@@ -178,30 +144,38 @@ class LzhState:
             self._bitbuffer = self._read_next_byte()
             self._num_bits_on_buffer = 8
 
-        bit_out = (self._bitbuffer >> 7) & 1
-        self._bitbuffer = (self._bitbuffer << 1) & 0xFF
+        # bitstream is right-to-left
+        bit_out = self._bitbuffer & 1
+        self._bitbuffer = (self._bitbuffer >> 1) & 0xFF
         self._num_bits_on_buffer -= 1
 
-        return bit_out
+        self._bit_counter += 1
+        self._bit_counter &= 7
 
+        return bit_out
+    
     def read_byte(self):
         byte = 0
-        for _ in range(8):
-            byte = (byte << 1) + self.read_bit()
+        for i in range(8):
+            byte |= self.read_bit() << i
         return byte
     
+    def read_num_bits(self, num_bits: int):
+        byte = 0
+        for i in range(num_bits):
+            byte |= self.read_bit() << i
+        return byte
+
     def read_position(self):
+        # identical to original
         i = self.read_byte()
         c = D_CODE[i] << 6
-        j = D_LEN[i]
+        j = D_LEN[i] - 2
 
-        j -= 2
-        while j > 0:
-            i = (i << 1) + self.read_bit()
-            j -= 1
-        
-        return c | (i & 0x3F)
+        x = self.read_num_bits(j)
+        return c | (((i << j) + x) & 0x3F)
     
+    # identical to stock lzh
     def _reconstruct(self):
 
         # collect leaf nodes in the first half of the table
@@ -250,6 +224,7 @@ class LzhState:
             else:
                 self._parent_nodes[k] = self._parent_nodes[k+1] = _uint16(i)
 
+    # identical to stock lzh
     def _update(self, c: int):
         if self._frequency_table[LZH_R] == LZH_MAX_FREQ:
             self._reconstruct()
@@ -293,24 +268,22 @@ class LzhState:
     def read_char(self):
         c = _uint16(self._child_nodes[LZH_R])
 
+        # the original code reads up to 3 bytes little endian,
+        # and the bitstream itself will be read right-to-left
         while c < LZH_T:
             c += self.read_bit()
             c = _uint16(self._child_nodes[c])
+        
         c -= LZH_T
 
         self._update(c)
 
         return c
 
-def lzh_decompress(input: bytes,
-                   output_size: int,
-                   textbuffer_fill_char: int = 0):
-    '''
-    Decompress standard LZH.
-    '''
-    lzh_state = LzhState(input)
+def lzhexen_decompress(input: bytes, output_size: int):
+    lzh_state = LzHexenState(input)
 
-    text_buf = bytearray([textbuffer_fill_char] * (LZH_N + LZH_F - 1))
+    text_buf = bytearray([0x20] * (LZH_N + LZH_F - 1))
     r = LZH_N - LZH_F
 
     output = bytearray()
@@ -331,31 +304,5 @@ def lzh_decompress(input: bytes,
                 output.append(c)
                 text_buf[r] = c
                 r = (r + 1) & (LZH_N-1)
-    
-    return output
-
-def lzhsote_decompress(input: bytes, output_size: int):
-    lzh_state = LzhState(input)
-
-    output = bytearray()
-
-    r = LZH_SOTE_MAX_BACKSEEK
-
-    while len(output) < output_size:
-
-        c = lzh_state.read_char()
-        if c < 256:
-            # write directly to output
-            # remember that this LZH variant does NOT use the text buffer
-            output.append(c & 0xFF)
-        else:
-            # backseek to no more than 0xFC2 bytes in the output buffer
-            p = lzh_state.read_position()
-            j = c - 255 + LZH_THRESHOLD
-
-            i = len(output) - (r - (r - p - 1))
-            for _ in range(j):
-                output.append(output[i])
-                i += 1
     
     return output

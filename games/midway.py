@@ -566,3 +566,11 @@ def cruisnexotica_unpack(rom: N64Rom, ipc: int) -> Bffi:
     builder.seg(main_segment_load_address, mainseg)
 
     return builder.build()
+
+# ----------------------------------------------------------------
+#
+# Wayne Gretzky's 3D Hockey '98
+#
+# Resources are compressed with lzssmidway
+#
+# ----------------------------------------------------------------

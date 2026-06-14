@@ -1,11 +1,18 @@
 '''
-LZSS variant used by San Francisco Rush
+Midway LZSS variant
+
+Used on:
+- San Francisco Rush
+- Wayne Gretzky's 3D Hockey '98
 '''
 
 LZSS_N = 4096
 
 def lzssmidway_decompress(buffer: bytes) -> bytes:
+    # in some implementations, only the first byte of the textbuffer
+    # is set to zero. the rest are left in an undefined state
     text_buf = bytearray( [0] * (LZSS_N))
+
     flags    = 0
     buffer_pos = 0
     c = None

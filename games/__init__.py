@@ -44,6 +44,7 @@ from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
 from .shiren import shiren_unpack
 from .slugfest import slugfest_unpack
+from .softcreations import hexen_unpack
 from .sote import sote_unpack
 from .sparkrally import sparkrally_unpack
 from .sw1racer import sw1racer_unpack
@@ -1264,6 +1265,34 @@ GAME_SPECIFIC_UNPACKERS = {
     
     # Hamster Monogatari 64 (J) [!]
     "8ebdd2ca91df12f73fb42845e07571ed746ad89d4d648ef11c58c14a0d6b0118": hamster64_unpack,
+
+    # ------------------------------------------------------
+    # Software Creations
+    # ------------------------------------------------------
+    
+    # Hexen (U) [!]
+    "68a16a82f7f404ea39540d6e23797cac4144494d1761c4a7701fb55571bb782e": hexen_unpack,
+
+    # Hexen (J) [!]
+    "3a87423ed5177eb61da932daabbe339fcf52a1574005579f90c08dd804a6aa04": hexen_unpack,
+
+    # Hexen (E) [!]
+    "8f4a7fa1ac976d18aa764272b303c644b137046ad287e97f254f345c584f93eb": hexen_unpack,
+
+    # Hexen (G) [!]
+    "19269d49e2916c9a4ef29cc82941ad152b9ac0213b57efcf4478891293bb3aaf": hexen_unpack,
+
+    # Carmageddon 64 (U) [!]
+    # Likely a single-load game
+    "533a15b5da737fcbb2ae062d1cf2fc7552d64d7ac67293a76c70ebcdd354b01e": None,
+
+    # Carmageddon 64 (E) (M4) (Eng-Spa-Fre-Ita) [!]
+    # Likely a single-load game
+    "9cba33550c919fbeeef732b2b4345f309b7e95c9f8d0384a38fe44ba185b1d29": None,
+
+    # Carmageddon 64 (E) (M4) (Eng-Spa-Fre-Ger) [!]
+    # Likely a single-load game
+    "ac47515585ced9013e6a261d4da8216936f68119a1ea084fe5d6c395fa6abee7": None,
 
     # ------------------------------------------------------
     # Confirmed single-load games

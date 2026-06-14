@@ -145,7 +145,10 @@ def _extremeg_dump_resource_table(rom: N64Rom,
             resource = rom.read_bytes(resource_table_address + offset, compressed_size)
 
             logger.info("restable %08x, resource %04x: LZH compressed", resource_table_address, i)
-            resource = lzh_decompress(resource, uncompressed_size)
+            
+            # textbuffer is zero-filled on extremeg and xg2
+            resource = lzh_decompress(resource, uncompressed_size, textbuffer_fill_char=0x00)
+
             if len(resource) != uncompressed_size:
                 logger.warning("LZH size mismatch, expect %d got %d", uncompressed_size, len(resource))
             
