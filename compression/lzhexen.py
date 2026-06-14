@@ -1,15 +1,11 @@
 '''
 LZH variant used by Hexen
 
-Differences:
-- LZH_F has been changed to 128
-
-- Bitstream is no longer consistently left-to-right as in stock LZH.
-  When decoding a character, bits are read one at a time, right-to-left.
-  When decoding distance, we keep the lowest n bits of the bitstream,
-  so those will be output left-to-right in an otherwise right-to-left bitstream.
+This is LZH but with a larger lookahead buffer (F=128) and a bitstream read right-to-left.
 
 See also: https://github.com/Erick194/HexenN64Tool/blob/main/src/HexenLZHuff.cpp
+
+TODO: unify this and lzh.py? lots of it is the same
 '''
 
 import logging
@@ -23,8 +19,6 @@ LZH_N_CHAR = 256 - LZH_THRESHOLD + LZH_F
 LZH_T = LZH_N_CHAR * 2 - 1
 LZH_R = LZH_T-1
 LZH_MAX_FREQ = 0x8000
-
-LZH_SOTE_MAX_BACKSEEK = LZH_N - LZH_F - LZH_THRESHOLD
 
 # identical to stock lzh
 D_CODE = bytes([
@@ -154,24 +148,31 @@ class LzHexenState:
 
         return bit_out
     
-    def read_byte(self):
-        byte = 0
-        for i in range(8):
-            byte |= self.read_bit() << i
-        return byte
-    
+    # when reading multiple bits at a time, the decompressor keeps the rightmost bits
+    # but shifts them out in the order the bytes have them in.
+    # so even though this stream is now being read right-to-left, the symbols are
+    # still in the left-to-right order as in stock LZH
     def read_num_bits(self, num_bits: int):
         byte = 0
         for i in range(num_bits):
             byte |= self.read_bit() << i
         return byte
 
+    def read_byte(self):
+        return self.read_num_bits(8)
+    
     def read_position(self):
-        # identical to original
+        # identical to original, but i is shifted out from the rightmost bits
+        # in left-to-right order
         i = self.read_byte()
         c = D_CODE[i] << 6
         j = D_LEN[i] - 2
 
+        # this behavior is similar to the original in that i needs
+        # to be shifted left by j positions, but since the value we need
+        # to add to i is left-to-right in the rightmost j bits of the bitstream,
+        # we need to read those bits first and THEN add them to the output.
+        # reading them bit-by-bit as in the original lzh source won't work. 
         x = self.read_num_bits(j)
         return c | (((i << j) + x) & 0x3F)
     
