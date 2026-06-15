@@ -4,6 +4,7 @@ Game-specific unpacker drivers.
 
 from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack, \
                      shadowman_unpack
+from .aki import wwfnomercy_unpack
 from .bam import bam99_unpack
 from .bomberman import bomberman64_unpack, bomberman2_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
@@ -1293,6 +1294,19 @@ GAME_SPECIFIC_UNPACKERS = {
     # Carmageddon 64 (E) (M4) (Eng-Spa-Fre-Ger) [!]
     # Likely a single-load game
     "ac47515585ced9013e6a261d4da8216936f68119a1ea084fe5d6c395fa6abee7": None,
+
+    # ------------------------------------------------------
+    # AKI Corporation
+    # ------------------------------------------------------
+
+    # WWF No Mercy (U) (V1.0) [!]
+    "28badb169848aa814c35c242c48c1e95ce2540d6663e67079f97768096c17a1f": wwfnomercy_unpack,
+
+    # WWF No Mercy (E) (V1.0) [!]
+    "6feae209792675b1e21d927658d35e4d635c5767b58bae6f2c1e43c5f3035f51": wwfnomercy_unpack,
+
+    # WWF No Mercy (E) (V1.1) [!]
+    "381d46cfdf108122d8e41a3e0a45b2c8fb9d0429f130dde5d6d58e6d81da07c0": wwfnomercy_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
