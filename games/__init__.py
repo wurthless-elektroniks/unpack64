@@ -1338,6 +1338,18 @@ GAME_SPECIFIC_UNPACKERS = {
     "8f759c230e6c261eb77cff7906740173132c7051fcaed10dea71d78e375e45c7": wwfnomercy_unpack,
 
     # ------------------------------------------------------
+    # Zed Two
+    # ------------------------------------------------------
+
+    # Wetrix (U) (M6) [!]
+    # Very likely single load
+    "790f36a3ddd64e4dcd08c479b0b66f9080d0191473e92fa895f53d15706167bb": None,
+
+    # Wetrix (E) (M6) [!]
+    # Very likely single load
+    "17d5917ec3235e9e8aff54201d78bd01aa36377f81ac133ed0248d8ab1c61de5": None,
+
+    # ------------------------------------------------------
     # Confirmed single-load games
     #
     # Any game that does not need to be unpacked should be blacklisted
