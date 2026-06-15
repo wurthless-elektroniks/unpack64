@@ -4,7 +4,7 @@ Game-specific unpacker drivers.
 
 from .acclaim import armorines_unpack, southpark_unpack, turok3_unpack, revolt_unpack, \
                      shadowman_unpack
-from .aki import wwfnomercy_unpack
+from .aki import wwfnomercy_unpack, wcwnwoworldtour_unpack
 from .bam import bam99_unpack
 from .bomberman import bomberman64_unpack, bomberman2_unpack
 from .bottomup import sumo_unpack, alice_unpack, onegai_unpack
@@ -1307,6 +1307,35 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # WWF No Mercy (E) (V1.1) [!]
     "381d46cfdf108122d8e41a3e0a45b2c8fb9d0429f130dde5d6d58e6d81da07c0": wwfnomercy_unpack,
+
+    # WCW vs. nWo - World Tour (U) (V1.0) [!]
+    "852dc6478e55c13da60080c1ed468ecf6aa2f370c1bb8ba16720622fa931763a": wcwnwoworldtour_unpack,
+
+    # WCW vs. nWo - World Tour (U) (V1.1) [!]
+    "3711c8838b18374d1c7be0192ad824082d33978f00b886d145bc55a782325d4d": wcwnwoworldtour_unpack,
+    
+    # WCW vs. nWo - World Tour (E) [!]
+    "177b179b78c86b97ac5ee21d7eed543ddd1a1a71a41d74adcb4c7bbdfff5f479": wcwnwoworldtour_unpack,
+
+    # Virtual Pro Wrestling 64 (J) [!]
+    "8b7191ae5489fc71c7a18c05a0afba035a88d8f22a2b047253dd9c524fb88921": wcwnwoworldtour_unpack,
+
+    # WCW-nWo Revenge (U) [!]
+    "66c137d326565c6f31f992daba8f67c0aee7f025a142dd249d27019708014b60": wwfnomercy_unpack,
+
+    # WCW-nWo Revenge (E) [!]
+    "e4bd4f49d6e2217294cd2f9178488349eabd44155e4ad0436a9d1ddef58c53da": wwfnomercy_unpack,
+
+    # Virtual Pro Wrestling 2 - Oudou Keishou (J) [!]
+    "358e9a345438155c6bd57da4bbf0f7a9fa1b4f7d5b1b726e8076c38f0f987e52": wwfnomercy_unpack,
+
+    # TODO: Wrestlemania 2000 US (don't have a good dump of it)
+
+    # WWF WrestleMania 2000 (J) [!]
+    "3e3114266d5faeed1ed385528b0e4dbe268fdf64778a657895b31bab9de9ad85": wwfnomercy_unpack,
+
+    # WWF WrestleMania 2000 (E) [!]
+    "8f759c230e6c261eb77cff7906740173132c7051fcaed10dea71d78e375e45c7": wwfnomercy_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
