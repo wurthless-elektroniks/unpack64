@@ -114,6 +114,7 @@ Games using virtual memory:
 - All-Star Baseball 2000
 - All-Star Baseball 2001
 - Armorines: Project S.W.A.R.M.
+- Conker's Bad Fur Day
 - GoldenEye 007
 - Indiana Jones and the Infernal Machine
 - Jeremy McGrath Supercross 2000

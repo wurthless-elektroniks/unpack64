@@ -40,6 +40,7 @@ from .nintendo import sm64_unpack, drmario_unpack, mariokart_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .pm64 import pm64_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
+from .raretlb import conker_unpack
 from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
@@ -277,6 +278,17 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # Killer Instinct Gold (E) [!]
     "a77af932a359c4cd9f17f38e22ebccb3e11ae3dfd58da2780fbdec780809a4c0": kig_unpack,
+
+    # ------------------------------------------------------
+    # Rare games using the TLB
+    # ------------------------------------------------------
+
+    # Conker's Bad Fur Day (U) [!]
+    "32e6a8b970ec12ac5f782344945aa0c98a193832eefb687529d03bab6948714b": conker_unpack,
+
+    # Conker's Bad Fur Day (E) [!]
+    "8717054d8edcf1bb9fb4607c7ac8fe4d6fb855fe6506f7e5dcba62e414558178": conker_unpack,
+
 
     # ------------------------------------------------------
     # Bust-A-Move '99 with .bss-less preamble, that instead initializes .bss
