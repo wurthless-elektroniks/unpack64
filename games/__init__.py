@@ -40,7 +40,7 @@ from .nintendo import sm64_unpack, drmario_unpack, mariokart_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .pm64 import pm64_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
-from .raretlb import conker_unpack
+from .raretlb import conker_unpack, goldeneye_unpack
 from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
@@ -289,6 +289,14 @@ GAME_SPECIFIC_UNPACKERS = {
     # Conker's Bad Fur Day (E) [!]
     "8717054d8edcf1bb9fb4607c7ac8fe4d6fb855fe6506f7e5dcba62e414558178": conker_unpack,
 
+    # GoldenEye 007 (U) [!]
+    "2cdcec8a9f0cb6e36337f3ee39d8ad105dc8afa6ba1c02d466e8f5b771f9a162": goldeneye_unpack,
+
+    # GoldenEye 007 (J) [!]
+    "ec77080ba674068299afea2baf0530165c2a76192025a09c7abbb0b9614cd7ec": goldeneye_unpack,
+
+    # GoldenEye 007 (E) [!]
+    "40ff3643d3ed0be1b0b88266d298f455c15bd5a6f1a520c9aa2650b5f4b349de": goldeneye_unpack,
 
     # ------------------------------------------------------
     # Bust-A-Move '99 with .bss-less preamble, that instead initializes .bss

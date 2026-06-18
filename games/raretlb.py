@@ -20,7 +20,7 @@ from bffi import BffiBuilder, Bffi, BffiTlb, BffiTlbEntry
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
-from sigutil import pick_pattern
+from sigutil import pick_pattern, contains_code
 from tlbutil import tlbutil_generate_bffi_tlb, tlbutil_pack_entrylo
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ GOLDENEYE_ENTRY_POINT_PATTERN = SignatureBuilder() \
 def _raretlb_extract_entrypoint_and_page0(ipc: int, bootexe: bytes, entrypoint_address: int) -> tuple[int,int,BffiTlbEntry]:
     entrypoint_offset = entrypoint_address - ipc
     if RARETLB_ENTRY_POINT_PATTERN.compare(bootexe, entrypoint_offset) is False:
-        return None, None
+        return None, None, None
 
     consts = RARETLB_ENTRY_POINT_PATTERN.consts(ipc, bootexe, entrypoint_offset)
     tlb_os_base_address = consts["tlb_os_base_address"].get_value()
@@ -105,10 +105,27 @@ def _raretlb_extract_entrypoint_and_page0(ipc: int, bootexe: bytes, entrypoint_a
     
     # this TLB setup maps the entire RDRAM space to 0x10xxxxxx
     page0 = BffiTlbEntry()
-    page0.pagemask(0x7FE000)   # 4 mbytes page size
-    page0.entryhi(0x10000000)  # at 0x10000000
+    page0.pagemask(0x7FE000)            # 4 mbytes page size
+    page0.entryhi(tlb_os_base_address)
     page0.entrylo0( tlbutil_pack_entrylo(0x00000000, 0x1F) )
     page0.entrylo1( tlbutil_pack_entrylo(0x00400000, 0x1F) )
+
+    return tlb_os_base_address, entry_point, page0
+
+def _goldeneye_extract_entrypoint_and_page0(ipc: int, bootexe: bytes, entrypoint_address: int) -> tuple[int,int,BffiTlbEntry]:
+    entrypoint_offset = entrypoint_address - ipc
+    if GOLDENEYE_ENTRY_POINT_PATTERN.compare(bootexe, entrypoint_offset) is False:
+        return None, None, None
+
+    consts = GOLDENEYE_ENTRY_POINT_PATTERN.consts(ipc, bootexe, entrypoint_offset)
+    tlb_os_base_address = consts["tlb_os_base_address"].get_value()
+    entry_point = consts["entry_point"].get_value()
+    
+    page0 = BffiTlbEntry()
+    page0.pagemask(0x7FE000)            # 4 mbytes page size
+    page0.entryhi(tlb_os_base_address)  # at 0x70000000
+    page0.entrylo0( tlbutil_pack_entrylo(0x00000000, 0x1F) )
+    page0.entrylo1( 1 )
 
     return tlb_os_base_address, entry_point, page0
 
@@ -370,5 +387,215 @@ def conker_unpack(rom: N64Rom, ipc: int):
     builder.fix(ipc, bootexe)
     builder.fix(dataseg_load_address, dataseg)
     builder.fix(0x15000000, swap_decompressed)
+
+    return builder.build()
+
+# ---------------------------------------------------------------
+#
+# Goldeneye 007
+#
+# The game that was considered the gold standard for console FPSes
+# only because Halo didn't exist yet.
+#
+# Part of the bootexe is zlibbed (11 72 headered). To decompress it, the game copies it and
+# and the inflate routines to higher memory (without flushing the instruction cache!!)
+# and inflates it to where it sat originally.  Since that's not exciting enough,
+# the game will also override exception handlers installed by osInitialize() so that the
+# virtual memory scheme can do its job.
+#
+# The virtual memory scheme is pretty boring stuff once you are used to reverse engineering
+# the swap setups these games have. Everything in ROM past the end of the boot segment, including
+# its deflated portions, is mapped in 8 kbyte pages, but only about 1 MB of that is actually
+# the swap segment. The remainder of the ROM, including resources, is DMA'd in using readcart routines.
+# 
+# I cheated and used the decomp for this.
+# Read it here: https://gitlab.com/kholdfuzion/goldeneye_src
+#
+# ---------------------------------------------------------------
+
+GOLDENEYE_RETURN_STUB_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x02, WILDCARD, WILDCARD, # lui        v0,0x3
+        0x03, 0xe0, 0x00, 0x08,         # jr         ra
+        0x24, 0x42, WILDCARD, WILDCARD, # _addiu     v0,v0,0x3590
+    ]) \
+    .const_op32_hi16("result", 0) \
+    .const_op32_lo16("result", 8) \
+    .build()
+
+GOLDENEYE_REAL_ENTRY_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0xc0,             # +0x00 addiu      sp,sp,-0x40
+        0xaf, 0xbf, 0x00, 0x24,             # +0x04 sw         ra,local_1c(sp)
+        0xaf, 0xb1, 0x00, 0x20,             # +0x08 sw         s1,local_20(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x0C jal        get_csegmentSegmentStart
+        0xaf, 0xb0, 0x00, 0x1c,             # +0x10 _sw        s0,local_24(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x14 jal        get_cdataSegmentRomStart
+        0x00, 0x40, 0x80, 0x25,             # +0x18 _or        s0,v0,zero
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x1C jal        get_cdataSegmentRomEnd
+        0xaf, 0xa2, 0x00, 0x34,             # +0x20 _sw        v0,local_c(sp)
+        0x8f, 0xae, 0x00, 0x34,             # +0x24 lw         t6,local_c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal        get_inflateSegmentRomStart
+        0x00, 0x4e, 0x88, 0x23,             # +0x2C _subu      s1,v0,t6
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x30 jal        get_inflateSegmentRomEnd
+        0xaf, 0xa2, 0x00, 0x28,             # +0x34 _sw        v0,local_18(sp)
+    ]) \
+    .xref_j_imm26("get_csegmentSegmentStart", 0x0C) \
+    .xref_j_imm26("get_cdataSegmentRomStart", 0x14) \
+    .xref_j_imm26("get_cdataSegmentRomEnd", 0x1C) \
+    .xref_j_imm26("get_inflateSegmentRomStart", 0x28) \
+    .xref_j_imm26("get_inflateSegmentRomEnd", 0x30) \
+    .build()
+
+# game swaps in 8kbytes pages
+GOLDENEYE_ROM_SWAP_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x24, 0x01, 0x00, WILDCARD,         # +0x00 li         at,0x5a <-- total # of pages
+        0x00, 0x41, 0x00, 0x1b,             # +0x04 divu       v0,at
+        0x00, 0x00, 0x20, 0x10,             # +0x08 mfhi       a0
+        0x3c, 0x03, 0x80, WILDCARD,         # +0x0C lui        v1,0x8002
+        0x24, 0x63, WILDCARD, WILDCARD,     # +0x10 addiu      v1,v1,0x30d4
+        0xac, 0x64, WILDCARD, WILDCARD,     # +0x14 sw         a0,0x0(v1)=>DAT_800230d4
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x18 jal        FUN_70001954 <-- tries to free up a page
+        0x00, 0x80, 0x80, 0x25,             # +0x1C _or        s0,a0,zero
+        0x8f, 0xa2, 0x00, 0x28,             # +0x20 lw         v0,local_28(sp)
+        0x3c, 0x19, 0x80, WILDCARD,         # +0x24 lui        t9,0x8006
+        0x8f, 0x39, WILDCARD, WILDCARD,     # +0x28 lw         t9,-0x1b58(t9)
+        0x3c, 0x01, 0x00, 0xff,             # +0x2C lui        at,0xff
+        0x34, 0x21, 0xe0, 0x00,             # +0x30 ori        at,at,0xe000
+        0x00, 0x10, 0x43, 0x40,             # +0x34 sll        t0,s0,0xd
+        0x3c, 0x0a, 0x00, WILDCARD,         # +0x38 lui        t2,0x3 <-- swap location in ROM
+        0x00, 0x41, 0x48, 0x24,             # +0x3C and        t1,v0,at
+        0x25, 0x4a, WILDCARD, WILDCARD,     # +0x40 addiu      t2,t2,0x4b30
+        0x03, 0x28, 0x20, 0x21,             # +0x44 addu       a0,t9,t0
+        0xaf, 0xa4, 0x00, 0x34,             # +0x48 sw         a0,local_1c(sp)
+        0x01, 0x2a, 0x28, 0x21,             # +0x4C addu       a1,t1,t2
+        0x01, 0x20, 0x10, 0x25,             # +0x50 or         v0,t1,zero
+        0xaf, 0xa9, 0x00, 0x24,             # +0x54 sw         t1,local_2c(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x58 jal        FUN_70005c1c
+        0x24, 0x06, 0x20, 0x00,             # +0x5C _li        a2,0x2000
+    ]) \
+    .const_op32_imm16("num_pages", 0x00) \
+    .const_op32_hi16("swap_rom_address", 0x38) \
+    .const_op32_lo16("swap_rom_address", 0x40) \
+    .build()
+
+def _get_return_value(ipc_tlb, bootexe, address):
+    offset = address - ipc_tlb
+    if (0 <= offset < len(bootexe)) is False:
+        raise RuntimeError("outta bounds!!")
+
+    if GOLDENEYE_RETURN_STUB_PATTERN.compare(bootexe, offset) is False:
+        raise RuntimeError(f"data at bootexe+0x{offset:08x} (virtual 0x{ipc_tlb+offset:08x}) didn't match expected signature")
+    consts = GOLDENEYE_RETURN_STUB_PATTERN.consts(ipc_tlb, bootexe, offset)
+    return consts["result"].get_value()
+
+def goldeneye_unpack(rom: N64Rom, ipc: int):
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    builder = BffiBuilder()
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_address-ipc]
+
+    tlb_os_base, entry_point, os_page = _goldeneye_extract_entrypoint_and_page0(ipc, bootexe, preamble.crt_entry_point())
+    if entry_point is None:
+        return None
+    
+    ipc_tlb = (ipc - 0x80000000) + tlb_os_base
+
+    entry_point_offset = entry_point - ipc_tlb
+    
+    if GOLDENEYE_REAL_ENTRY_PATTERN.compare(bootexe, entry_point_offset) is False:
+        return None
+    
+    logger.info("found Goldeneye entry point")
+
+    romswap_offset = GOLDENEYE_ROM_SWAP_PATTERN.find(bootexe)
+    if romswap_offset is None:
+        raise RuntimeError("romswap not found")
+
+    xrefs = GOLDENEYE_REAL_ENTRY_PATTERN.xrefs(ipc_tlb, bootexe, entry_point_offset)
+
+    csegment_start            = _get_return_value(ipc_tlb, bootexe, xrefs["get_csegmentSegmentStart"].get_address())
+    cdatasegment_rom_start    = _get_return_value(ipc_tlb, bootexe, xrefs["get_cdataSegmentRomStart"].get_address())
+    cdatasegment_rom_end      = _get_return_value(ipc_tlb, bootexe, xrefs["get_cdataSegmentRomEnd"].get_address())
+
+    # the swap segment, which contains the game code, will have its own inflate routines.
+    # the bootloader's inflate code is called only once at init, and then never again.
+    cinflatesegment_rom_start = _get_return_value(ipc_tlb, bootexe, xrefs["get_inflateSegmentRomStart"].get_address())
+    cinflatesegment_rom_end   = _get_return_value(ipc_tlb, bootexe, xrefs["get_inflateSegmentRomEnd"].get_address())
+
+    logger.info("compressed data segment: ROM 0x%08x-0x%08x -> RAM 0x%08x",
+                cdatasegment_rom_start,
+                cdatasegment_rom_end,
+                csegment_start)
+    
+    dataseg = rom.read_bytes(cdatasegment_rom_start, cdatasegment_rom_end - cdatasegment_rom_start)
+    if dataseg[:2] != bytes([0x11, 0x72]):
+        raise RuntimeError("dataseg didn't start with rarezip magic 11 72")
+    dataseg = zlib.decompress(dataseg[2:], wbits=-15)
+
+    # the dataseg wipes out part of the bootexe, so rebuild the bootexe
+    csegment_start_offset = csegment_start - ipc
+    csegment_end_offset   = (csegment_start - ipc) + len(dataseg)
+
+    len_bootexe_before = len(bootexe)
+    bootexe = bootexe[:csegment_start_offset] + dataseg
+
+    logger.info("bootexe rebuilt. 0x%08x-0x%08x original, 0x%08x-0x%08x decompressed",
+                ipc,
+                ipc+csegment_start_offset,
+                ipc+csegment_start_offset,
+                ipc+csegment_start_offset+csegment_end_offset)
+    
+    # the now-extended bootexe chewed up some of the bss segment, so adjust bss accordingly
+
+    # now let's dump the swap segment.
+    # the swap scheme used here means that pretty much the rest of ROM can be treated as virtual memory,
+    # but the game does not do this. it prefers to copy resources from ROM using DMA.
+    # so, we'll need to make a guess as to where the swap segment actually ends.
+    consts = GOLDENEYE_ROM_SWAP_PATTERN.consts(ipc_tlb, bootexe, romswap_offset)
+    swap_rom_address = consts["swap_rom_address"].get_value()
+
+    logger.info("swap segment in ROM at 0x%08x", swap_rom_address)
+
+    swap = bytearray([])
+    
+    # keep copying while we still find MIPS bytecode
+    offset = swap_rom_address
+    while True:
+        page = rom.read_bytes(offset, 0x2000)
+        if contains_code(page) is False:
+            break
+        offset += 0x2000
+
+    logger.info("swap looks like it occupies 0x%08x-0x%08x",
+                swap_rom_address,
+                offset)
+    
+    swap_page = BffiTlbEntry()
+    swap_page.entryhi(0x7F000000)
+    swap_page.pagemask(0x1FE000) # should not be more than 1 mb, i think
+    swap_page.entrylo0(tlbutil_pack_entrylo(0x00700000, 0x1F))
+    swap_page.entrylo1(1)
+
+    tlb = tlbutil_generate_bffi_tlb({
+        0: os_page,
+        1: swap_page
+    })
+
+    builder.initial_tlb(tlb)
+
+    # TODO: WRONG! goldeneye should NOT require the expansion pak!
+    # this is only here until BFFI supports swap segments natively!
+    builder.required_memory_size(8) 
+
+    builder.fix(tlb_os_base, bootexe)
+    builder.fix(0x7F000000, swap)
+
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entry_point)
 
     return builder.build()
