@@ -25,18 +25,14 @@ import logging
 import struct
 
 from n64rom import N64Rom
-from bffi import BffiTlb, BffiTlbEntry, PAGE_SIZE_LUT
+from bffi import BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
-
 from preamble import identify_preamble, Preamble
 
+from tlbconst import TLB_PAGEMASK_TO_SIZE_LUT, TLB_PAGEMASK_4MBYTES
+from tlbutil import tlbutil_pack_entrylo
+
 logger = logging.getLogger(__name__)
-
-
-def tlb_pack_entrylo( page_physical_address, flags ) -> int:
-    pfn = (page_physical_address >> 6) & 0xFFFFFFC0
-    flags &= 0x1F
-    return pfn | flags
 
 def _ident_preamble_common(rom: N64Rom,
                            ipc: int,
@@ -186,7 +182,7 @@ def tlb_try_detect_singleton(rom: N64Rom,
     entrylo1    = consts["entrylo1"].get_value()
     entry_point = consts["entry_point"].get_value()
 
-    if pagemask not in PAGE_SIZE_LUT:
+    if pagemask not in TLB_PAGEMASK_TO_SIZE_LUT:
         logger.error("page size invalid")
         return None, None
 
@@ -204,8 +200,8 @@ def tlb_try_detect_singleton(rom: N64Rom,
     entry_1f.pagemask(pagemask)
     entry_1f.entryhi(entryhi)
     # TODO: confirm this... could be wrong
-    entry_1f.entrylo0( tlb_pack_entrylo(entrylo0, 0x1F) if entrylo0 != -1 else 1 )
-    entry_1f.entrylo1( tlb_pack_entrylo(entrylo1, 0x1F) if entrylo1 != -1 else 1 )
+    entry_1f.entrylo0( tlbutil_pack_entrylo(entrylo0, 0x1F) if entrylo0 != -1 else 1 )
+    entry_1f.entrylo1( tlbutil_pack_entrylo(entrylo1, 0x1F) if entrylo1 != -1 else 1 )
     tlb.entry(0x1F, entry_1f)
 
     logger.info(\
@@ -295,10 +291,10 @@ def tlb_try_detect_factor5_stub(rom: N64Rom,
         tlb.entry(i, entry)
 
     entry_00 = BffiTlbEntry()
-    entry_00.pagemask(0x7FE000)
+    entry_00.pagemask(TLB_PAGEMASK_4MBYTES)
     entry_00.entryhi(0x40000000)
-    entry_00.entrylo0( tlb_pack_entrylo(0x00000000, 0x1F) )
-    entry_00.entrylo1( tlb_pack_entrylo(0x00400000, 0x1F) )
+    entry_00.entrylo0( tlbutil_pack_entrylo(0x00000000, 0x1F) )
+    entry_00.entrylo1( tlbutil_pack_entrylo(0x00400000, 0x1F) )
     tlb.entry(0x00, entry_00)
 
     tlb.wired(1)

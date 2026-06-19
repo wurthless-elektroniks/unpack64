@@ -36,6 +36,7 @@ from bffi import Bffi, BffiBuilder, BffiTlb, BffiTlbEntry
 from n64rom import N64Rom
 from preamble import identify_preamble
 from signature import SignatureBuilder, WILDCARD
+from tlbconst import TLB_PAGEMASK_4MBYTES
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,7 @@ def gauntlet_unpack(rom: N64Rom, ipc: int) -> Bffi:
         tlb.entry(i, tlb_entry)
 
     tlb_entry_1e = BffiTlbEntry()
-    tlb_entry_1e.pagemask(0x7fe000)
+    tlb_entry_1e.pagemask(TLB_PAGEMASK_4MBYTES)
     tlb_entry_1e.entryhi(0xE0000000)
     tlb_entry_1e.entrylo0( (0 >> 6) | 0x1F )
     tlb_entry_1e.entrylo1( (0x400000 >> 6) | 0x1F )

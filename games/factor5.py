@@ -9,7 +9,9 @@ import logging
 import struct
 
 from preamble import identify_preamble
-from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
+from tlbconst import TLB_PAGEMASK_1MBYTES
+from tlbident import tlb_try_detect_preamble
+from tlbutil import tlbutil_pack_entrylo
 from mips import disassemble_jump_imm26_target
 from n64rom import N64Rom
 from bffi import Bffi,BffiBuilder,BffiSectionType, BffiTlb, BffiTlbEntry
@@ -236,9 +238,9 @@ def indy_unpack(rom: N64Rom, ipc: int) -> Bffi:
     logger.info("BFFI will map 1 mb page at 0x80300000 -> 0x41000000 (the real game code doesn't do this, FYI)")
 
     entry_01 = BffiTlbEntry()
-    entry_01.pagemask(0x1FE000)
+    entry_01.pagemask(TLB_PAGEMASK_1MBYTES)
     entry_01.entryhi(0x41000000)
-    entry_01.entrylo0( tlb_pack_entrylo(0x00300000, 0x1F) )
+    entry_01.entrylo0( tlbutil_pack_entrylo(0x00300000, 0x1F) )
     entry_01.entrylo1( 1 )
     tlb.entry(0x01, entry_01)
 

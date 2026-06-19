@@ -13,7 +13,7 @@ from bffi import BffiBuilder, Bffi, BffiTlb, BffiTlbEntry
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
-from tlb import tlb_pack_entrylo
+from tlbutil import tlbutil_pack_entrylo
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ def _bm64_init_tlb(entryhi: int,
     entry_00 = BffiTlbEntry()
     entry_00.pagemask(0) # 4kbytes page
     entry_00.entryhi(entryhi) # at 0x00000000 or 0x10000000
-    entry_00.entrylo0( tlb_pack_entrylo(zeropage_address & 0x00FFFFFF, 0x1F) )
+    entry_00.entrylo0( tlbutil_pack_entrylo(zeropage_address & 0x00FFFFFF, 0x1F) )
     entry_00.entrylo1( 1 )
     tlb.entry(0x00, entry_00)
 

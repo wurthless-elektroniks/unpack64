@@ -21,6 +21,7 @@ from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
 from sigutil import pick_pattern, contains_code
+from tlbconst import TLB_PAGEMASK_1MBYTES, TLB_PAGEMASK_4MBYTES
 from tlbutil import tlbutil_generate_bffi_tlb, tlbutil_pack_entrylo
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def _raretlb_extract_entrypoint_and_page0(ipc: int, bootexe: bytes, entrypoint_a
     
     # this TLB setup maps the entire RDRAM space to 0x10xxxxxx
     page0 = BffiTlbEntry()
-    page0.pagemask(0x7FE000)            # 4 mbytes page size
+    page0.pagemask(TLB_PAGEMASK_4MBYTES)            # 4 mbytes page size
     page0.entryhi(tlb_os_base_address)
     page0.entrylo0( tlbutil_pack_entrylo(0x00000000, 0x1F) )
     page0.entrylo1( tlbutil_pack_entrylo(0x00400000, 0x1F) )
@@ -122,7 +123,7 @@ def _goldeneye_extract_entrypoint_and_page0(ipc: int, bootexe: bytes, entrypoint
     entry_point = consts["entry_point"].get_value()
     
     page0 = BffiTlbEntry()
-    page0.pagemask(0x7FE000)            # 4 mbytes page size
+    page0.pagemask(TLB_PAGEMASK_4MBYTES)            # 4 mbytes page size
     page0.entryhi(tlb_os_base_address)  # at 0x70000000
     page0.entrylo0( tlbutil_pack_entrylo(0x00000000, 0x1F) )
     page0.entrylo1( 1 )
@@ -368,7 +369,7 @@ def conker_unpack(rom: N64Rom, ipc: int):
     # TODO: define a standard swap format for BFFI. for now, we will just
     # map the swap segment to expansion pak space
     swap_page = BffiTlbEntry()
-    swap_page.pagemask(0x1FE000)  # two 1 mbyte pages
+    swap_page.pagemask(TLB_PAGEMASK_1MBYTES)  # two 1 mbyte pages
     swap_page.entryhi(0x15000000)
     swap_page.entrylo0(tlbutil_pack_entrylo(0x00600000, 0x1F))
     swap_page.entrylo1(tlbutil_pack_entrylo(0x00700000, 0x1F))
@@ -577,7 +578,7 @@ def goldeneye_unpack(rom: N64Rom, ipc: int):
     
     swap_page = BffiTlbEntry()
     swap_page.entryhi(0x7F000000)
-    swap_page.pagemask(0x1FE000) # should not be more than 1 mb, i think
+    swap_page.pagemask(TLB_PAGEMASK_1MBYTES) # should not be more than 1 mb, i think
     swap_page.entrylo0(tlbutil_pack_entrylo(0x00700000, 0x1F))
     swap_page.entrylo1(1)
 

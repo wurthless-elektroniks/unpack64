@@ -38,7 +38,9 @@ from .acclaimfs import acclaimfs_read
 
 from compression.rnc import rnc_unpack, rnc_get_filesize_from_header
 from preamble import identify_preamble
-from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
+from tlbconst import TLB_PAGEMASK_1MBYTES
+from tlbident import tlb_try_detect_preamble
+from tlbutil import tlbutil_pack_entrylo
 from n64rom import N64Rom
 from bffi import Bffi, BffiBuilder, BffiTlb, BffiTlbEntry
 from signature import SignatureBuilder, WILDCARD
@@ -213,7 +215,7 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
         tlb.entry(i, entry)
     
     entry1f = BffiTlbEntry()
-    entry1f.pagemask(0x1fe000)
+    entry1f.pagemask(TLB_PAGEMASK_1MBYTES)
     entry1f.entryhi(0)
     entry1f.entrylo0(1)
     entry1f.entrylo1(0x1F)
@@ -221,10 +223,10 @@ def nbajam2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     # same as the others
     entry00 = BffiTlbEntry()
-    entry00.pagemask(0x1FE000)
+    entry00.pagemask(TLB_PAGEMASK_1MBYTES)
     entry00.entryhi(0x200000)
-    entry00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
-    entry00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    entry00.entrylo0(tlbutil_pack_entrylo(0x00600000, 0x1F))
+    entry00.entrylo1(tlbutil_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, entry00)
 
     builder.initial_tlb(tlb)
@@ -499,10 +501,10 @@ def allstar2k_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
     tlb_00 = BffiTlbEntry()
-    tlb_00.pagemask(0x1FE000)
+    tlb_00.pagemask(TLB_PAGEMASK_1MBYTES)
     tlb_00.entryhi(0x200000)
-    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
-    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb_00.entrylo0(tlbutil_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlbutil_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
 
     builder = BffiBuilder()
@@ -659,10 +661,10 @@ def chef_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
     tlb_00 = BffiTlbEntry()
-    tlb_00.pagemask(0x1FE000)
+    tlb_00.pagemask(TLB_PAGEMASK_1MBYTES)
     tlb_00.entryhi(0x200000)
-    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
-    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb_00.entrylo0(tlbutil_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlbutil_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
 
     builder = BffiBuilder()
@@ -835,7 +837,7 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
         tlb.entry(i, entry)
     
     entry1f = BffiTlbEntry()
-    entry1f.pagemask(0x1fe000)
+    entry1f.pagemask(TLB_PAGEMASK_1MBYTES)
     entry1f.entryhi(0)
     entry1f.entrylo0(1)
     entry1f.entrylo1(0x1F)
@@ -844,10 +846,10 @@ def nflqbc99_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # this is also the same as others
     logger.info("mapping main overlay segment 0x00200000-0x003FFFFF -> 0x80600000")
     tlb_00 = BffiTlbEntry()
-    tlb_00.pagemask(0x1FE000)
+    tlb_00.pagemask(TLB_PAGEMASK_1MBYTES)
     tlb_00.entryhi(0x200000)
-    tlb_00.entrylo0(tlb_pack_entrylo(0x00600000, 0x1F))
-    tlb_00.entrylo1(tlb_pack_entrylo(0x00700000, 0x1F))
+    tlb_00.entrylo0(tlbutil_pack_entrylo(0x00600000, 0x1F))
+    tlb_00.entrylo1(tlbutil_pack_entrylo(0x00700000, 0x1F))
     tlb.entry(0, tlb_00)
 
     # TODO: capture overlays, of which there are several.

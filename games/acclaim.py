@@ -16,7 +16,9 @@ import logging
 from bffi import Bffi,BffiBuilder,BffiSectionType,BffiTlbEntry
 from n64rom import N64Rom
 from signature import SignatureBuilder, WILDCARD
-from tlb import tlb_try_detect_preamble, tlb_pack_entrylo
+from tlbconst import TLB_PAGEMASK_1MBYTES, TLB_PAGEMASK_256KBYTES
+from tlbident import tlb_try_detect_preamble
+from tlbutil import tlbutil_pack_entrylo
 
 logger = logging.getLogger(__name__)
 
@@ -187,10 +189,10 @@ def armorines_unpack(rom: N64Rom, ipc: int) -> Bffi:
     tlb_0.entryhi(0x00400000)
 
     if swap_pagemask == 0x07e000:
-        tlb_0.entrylo0( tlb_pack_entrylo(swap_load_address, 0x1F) )
-        tlb_0.entrylo1( tlb_pack_entrylo(swap_load_address + 0x040000, 0x1F) )
+        tlb_0.entrylo0( tlbutil_pack_entrylo(swap_load_address, 0x1F) )
+        tlb_0.entrylo1( tlbutil_pack_entrylo(swap_load_address + 0x040000, 0x1F) )
     elif swap_pagemask == 0x1fe000:
-        tlb_0.entrylo0( tlb_pack_entrylo(swap_load_address, 0x1F) )
+        tlb_0.entrylo0( tlbutil_pack_entrylo(swap_load_address, 0x1F) )
         tlb_0.entrylo1( 1 )
 
     tlb.entry(0, tlb_0)
@@ -311,10 +313,10 @@ def southpark_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     # we will load this segment to 0x80380000
     tlb_0 = BffiTlbEntry()
-    tlb_0.pagemask(0x07e000)
+    tlb_0.pagemask(TLB_PAGEMASK_256KBYTES)
     tlb_0.entryhi(0x00400000)
-    tlb_0.entrylo0( tlb_pack_entrylo(0x00380000, 0x1F) )
-    tlb_0.entrylo1( tlb_pack_entrylo(0x003C0000, 0x1F) )
+    tlb_0.entrylo0( tlbutil_pack_entrylo(0x00380000, 0x1F) )
+    tlb_0.entrylo1( tlbutil_pack_entrylo(0x003C0000, 0x1F) )
     tlb.entry(0, tlb_0)
 
     if tlb.virtual_to_physical(0x00400000) != 0x00380000 or \
@@ -502,9 +504,9 @@ def turok3_unpack(rom: N64Rom, ipc: int) -> Bffi:
     # it's obvious this needs the expansion pak to play nice
     # so let's load it to expansion pak land
     tlb_0 = BffiTlbEntry()
-    tlb_0.pagemask(0x1fe000)
+    tlb_0.pagemask(TLB_PAGEMASK_1MBYTES)
     tlb_0.entryhi(0x00400000)
-    tlb_0.entrylo0( tlb_pack_entrylo(0x00700000, 0x1F) )
+    tlb_0.entrylo0( tlbutil_pack_entrylo(0x00700000, 0x1F) )
     tlb_0.entrylo1( 1 )
     tlb.entry(0, tlb_0)
 
@@ -642,9 +644,9 @@ def revolt_unpack(rom: N64Rom, ipc: int) -> Bffi:
     
     # TODO: verify that TLB is as expected
     entry00 = BffiTlbEntry()
-    entry00.pagemask(0x1fe000)
+    entry00.pagemask(TLB_PAGEMASK_1MBYTES)
     entry00.entryhi(0x00200000)
-    entry00.entrylo0( tlb_pack_entrylo(0x00600000, 0x1F) )
+    entry00.entrylo0( tlbutil_pack_entrylo(0x00600000, 0x1F) )
     entry00.entrylo1(1)
     tlb.entry(0, entry00)
 
@@ -780,9 +782,9 @@ def shadowman_unpack(rom: N64Rom, ipc: int) -> Bffi:
     swap = rom.read_bytes(swap_rom_start_address, swap_rom_end_address-swap_rom_start_address)
 
     entry00 = BffiTlbEntry()
-    entry00.pagemask(0x1fe000)
+    entry00.pagemask(TLB_PAGEMASK_1MBYTES)
     entry00.entryhi(0x00200000)
-    entry00.entrylo0( tlb_pack_entrylo(0x00600000, 0x1F) )
+    entry00.entrylo0( tlbutil_pack_entrylo(0x00600000, 0x1F) )
     entry00.entrylo1(1)
     tlb.entry(0, entry00)
 

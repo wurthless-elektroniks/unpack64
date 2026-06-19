@@ -6,7 +6,7 @@ import os
 import logging
 
 
-from tlb import tlb_try_detect_preamble
+from tlbident import tlb_try_detect_preamble
 from icacheclr import icacheclr_find_call_count
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from games import GAME_SPECIFIC_UNPACKERS

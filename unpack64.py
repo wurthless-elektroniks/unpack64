@@ -10,7 +10,7 @@ from games import GAME_SPECIFIC_UNPACKERS
 
 from preamble import identify_preamble, Preamble, preamble_extract_bss_sections_to_bffi
 
-from tlb import tlb_try_detect_preamble
+from tlbident import tlb_try_detect_preamble
 
 logger = logging.getLogger(__name__)
 
