@@ -7,9 +7,6 @@ Games that go here:
 - Perfect Dark
 
 These games have been picked apart by the community and are therefore low priority.
-
-Perfect Dark uses virtual memory on 4 MB systems. When the Expansion Pak
-is present, it will load the swap segment to RAM in one shot.
 '''
 
 import logging
@@ -17,11 +14,12 @@ import struct
 import zlib
 
 from bffi import BffiBuilder, Bffi, BffiTlb, BffiTlbEntry
+from datautil import unpack_uint24_be
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
 from signature import SignatureBuilder, WILDCARD
 from sigutil import pick_pattern, contains_code
-from tlbconst import TLB_PAGEMASK_1MBYTES, TLB_PAGEMASK_4MBYTES
+from tlbconst import TLB_PAGEMASK_1MBYTES, TLB_PAGEMASK_4MBYTES, TLB_PAGEMASK_64KBYTES
 from tlbutil import tlbutil_generate_bffi_tlb, tlbutil_pack_entrylo
 
 logger = logging.getLogger(__name__)
@@ -272,7 +270,7 @@ CONKER_TLB_EXCEPTION_HANDLER_PATTERN = SignatureBuilder() \
     ]) \
     .build()
 
-def _dump_swap(swap: bytes):
+def _conker_dump_swap(swap: bytes):
     toc_size = struct.unpack(">I", swap[:4])[0] ^ CONKER_XORKEY
     if toc_size != 0x800:
         raise RuntimeError("swap table of contents size mismatch!!")
@@ -351,7 +349,7 @@ def conker_unpack(rom: N64Rom, ipc: int):
     
     swap = rom.read_bytes(swap_rom_address + 4, swap_size - 4)
 
-    swap_decompressed = _dump_swap(swap)
+    swap_decompressed = _conker_dump_swap(swap)
 
     logger.info("data segment in ROM 0x%08x-0x%08x",
                 dataseg_rom_address,
@@ -492,6 +490,11 @@ def _get_return_value(ipc_tlb, bootexe, address):
     return consts["result"].get_value()
 
 def goldeneye_unpack(rom: N64Rom, ipc: int):
+    # perfect dark and goldeneye load to 0x80001000
+    # so RAM offsets in the first 1 mb of memory directly correspond to ROM addresses
+    if ipc != 0x80001000:
+        return None
+
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
         return None
@@ -600,3 +603,249 @@ def goldeneye_unpack(rom: N64Rom, ipc: int):
     builder.initial_program_counter(entry_point)
 
     return builder.build()
+
+# ---------------------------------------------------------------
+#
+# Perfect Dark
+#
+# What happens when EA snipes the rights to James Bond out from under your nose?
+# That's right, you push the N64 way beyond its limits.
+#
+# This uses a variant on Goldeneye's unpacker, although the bootloader
+# segment is way smaller this time, and both the bootexe's code and data are packed
+# this time. Deflated blobs are headered: 11 73 as the magic (not 11 72?) followed by 3 bytes
+# uncompressed size, then the deflated data follows.
+#
+# Swap segment is like Conker in that it zlibs all its pages, and the pages are 4kbytes each.
+# However there is no XOR on the offsets this time, and each zlibbed page has a two byte
+# thing preceding the header, so skip over that to go directly to what you want to inflate.
+#
+# If the Expansion Pak is detected, the swap segment will be loaded in one shot, and the TLB
+# will be setup to point 64kbyte pages to it. Otherwise, it will be swapped in 4kbyte pages.
+# In either case, the swap segment will start at 0x7F000000.
+#
+# ---------------------------------------------------------------
+
+PERFECTDARK_UNPACK_PATTERN = SignatureBuilder() \
+    .pattern([
+        # setup some ROM addresses first.
+        # the data is already in RDRAM, so we'll skip DMAing them into memory,
+        # also because libultra is inaccessible right now
+        0x3c, 0x04, 0x00, WILDCARD,         # +0x00 lui        a0,0x4
+        0x3c, 0x0b, 0x00, WILDCARD,         # +0x04 lui        t3,0x5
+        0x3c, 0x0c, 0x00, WILDCARD,         # +0x08 lui        t4,0x5
+        0x3c, 0x0d, 0x00, WILDCARD,         # +0x0C lui        t5,0x5
+        0x25, 0xad, WILDCARD, WILDCARD,     # +0x10 addiu      t5,t5,-0x17b0 = 0x4e850 <-- start of deflate stub (for the bootloader only)
+        0x25, 0x8c, WILDCARD, WILDCARD,     # +0x14 addiu      t4,t4,-0x3c0  = 0x4fc40 <-- end of deflate stub, swap segment
+        0x25, 0x6b, WILDCARD, WILDCARD,     # +0x18 addiu      t3,t3,-0x17b0 = 0x4e850 <-- end of deflated datasegment
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x1C addiu      a0,a0,-0x67b0 = 0x39850 <-- deflated data segment
+
+        # move deflated data segment to higher RAM, because it'll be inflated where it currently is
+        0x01, 0x64, 0x40, 0x23,             # +0x20 subu       t0,t3,a0
+        0x01, 0x8d, 0x70, 0x23,             # +0x24 subu       t6,t4,t5
+        0x01, 0x0e, 0x18, 0x21,             # +0x28 addu       v1,t0,t6
+        0x24, 0x62, 0xff, 0xff,             # +0x2C addiu      v0,v1,-0x1
+        0x04, 0x40, 0x00, 0x0b,             # +0x30 bltz       v0,LAB_7000177c
+        0x3c, 0x05, 0x70, WILDCARD,         # +0x34 _lui       a1,0x7000
+        0x3c, 0x01, 0x70, WILDCARD,         # +0x38 lui        at,0x7000
+        0x3c, 0x0f, 0x70, WILDCARD,         # +0x3C lui        t7,0x7020
+        0x01, 0xe8, 0x80, 0x23,             # +0x40 subu       s0,t7,t0
+        0x00, 0x81, 0x18, 0x25,             # +0x44 or         v1,a0,at
+        0x00, 0x62, 0xc0, 0x21,             # +0x48 addu       t8,v1,v0
+        0x93, 0x19, 0x00, 0x00,             # +0x4C lbu        t9,0x0(t8)=>DAT_7004fc3f
+        0x02, 0x02, 0x48, 0x21,             # +0x50 addu       t1,s0,v0
+        0x24, 0x42, 0xff, 0xff,             # +0x54 addiu      v0,v0,-0x1
+        0x04, 0x41, 0xff, 0xfb,             # +0x58 bgez       v0,LAB_70001764
+        0xa1, 0x39, 0x00, 0x00,             # +0x5C _sb        t9,0x0(t1)=>DAT_702013ef
+        
+        # also move deflated code segment to higher RAM
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0x60 addiu      a1,a1,0x1050 <-- a1 is now 0x70001050
+        0x3c, 0x07, 0x70, WILDCARD,         # +0x64 lui        a3,0x702c
+        0x3c, 0x0a, 0x70, WILDCARD,         # +0x68 lui        t2,0x7020
+        0x01, 0x48, 0x80, 0x23,             # +0x6C subu       s0,t2,t0
+        0x34, 0xe7, WILDCARD, WILDCARD,     # +0x70 ori        a3,a3,0x93e0
+        0x24, 0xa5, 0x20, 0x00,             # +0x74 addiu      a1,a1,0x2000 <-- a1 + 0x2000 = deflated code segment base (and where to deflate it)
+        0x00, 0x00, 0x20, 0x25,             # +0x78 or         a0,zero,zero
+        0x3c, 0x03, 0x70, WILDCARD,         # +0x7C lui        v1,0x7028
+        0x00, 0xa4, 0x58, 0x21,             # +0x80 addu       t3,a1,a0
+        0x8d, 0x6c, 0x00, 0x00,             # +0x84 lw         t4,0x0(t3)
+        0x24, 0x63, 0x00, 0x04,             # +0x88 addiu      v1,v1,0x4
+        0x00, 0x67, 0x08, 0x2b,             # +0x8C sltu       at,v1,a3
+        0x24, 0x84, 0x00, 0x04,             # +0x90 addiu      a0,a0,0x4
+        0x14, 0x20, 0xff, 0xfa,             # +0x94 bne        at,zero,LAB_7000179c
+        0xac, 0x6c, 0xff, 0xfc,             # +0x98 _sw        t4,-0x4(v1)=>DAT_70280000
+
+        # inflate code and data segments
+        0x3c, 0x04, 0x70, WILDCARD,         # +0x9C lui        a0,0x7028
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xA0 jal        FUN_7020126c = inflate()
+        0x3c, 0x06, 0x80, WILDCARD,         # +0xA4 _lui       a2,0x8030
+        0x3c, 0x05, 0x80, WILDCARD,         # +0xA8 lui        a1,0x8006 <-- where to inflate datasegment
+        0x24, 0xa5, WILDCARD, WILDCARD,     # +0xAC addiu      a1,a1,-0x6020
+        0x02, 0x00, 0x20, 0x25,             # +0xB0 or         a0,s0,zero
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0xB4 jal        FUN_7020126c 
+        0x3c, 0x06, 0x80, WILDCARD,         # +0xB8 _lui       a2,0x8030
+    ]) \
+    .const_op32_hi16("swap_segment_rom_address", 0x08) \
+    .const_op32_lo16("swap_segment_rom_address", 0x14) \
+    .const_op32_hi16("data_segment_rom_start_address", 0x00) \
+    .const_op32_lo16("data_segment_rom_start_address", 0x1C) \
+    .const_op32_hi16("data_segment_rom_end_address", 0x04) \
+    .const_op32_lo16("data_segment_rom_end_address", 0x18) \
+    .const_op32_hi16("bootexe_segment_base_address", 0x34) \
+    .const_op32_lo16("bootexe_segment_base_address", 0x60) \
+    .const_op32_imm16("bootexe_segment_size", 0x74) \
+    .const_op32_hi16("data_segment_load_address", 0xA8) \
+    .const_op32_lo16("data_segment_load_address", 0xAC) \
+    .build()
+
+def _perfectdark_dump_swap(swap: bytes):
+    toc_size = struct.unpack(">I", swap[:4])[0]
+    
+    swap_out = bytearray()
+
+    offset = 0
+    while offset < toc_size:
+        start_offset, end_offset = struct.unpack(">II", swap[offset:offset+8])
+        
+        if end_offset > 0x120000:
+            break
+        
+        page = swap[start_offset:end_offset]
+        if page[2:4] != bytes([0x11, 0x73]):
+            raise RuntimeError(f"page not deflated! expected 11 73 got {page[2]:02x} {page[3]:02x}")
+
+        page = page[2:]
+
+        page_size_decompressed = unpack_uint24_be(page[2:5])
+
+        logger.debug("decompress page 0x%08x-0x%08x (expecting size: %d)", start_offset, end_offset, page_size_decompressed)
+        page = zlib.decompress(page[5:], wbits=-15)
+
+        if len(page) != page_size_decompressed:
+            raise RuntimeError(f"swap page uncompressed size mismatch. expected {page_size_decompressed} got {len(page)}")
+        
+        swap_out += page
+
+        offset += 4
+
+    return swap_out
+
+def perfectdark_unpack(rom: N64Rom, ipc: int):
+    # perfect dark and goldeneye load to 0x80001000
+    # so RAM offsets in the first 1 mb of memory directly correspond to ROM addresses
+    if ipc != 0x80001000:
+        return None
+
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+
+    builder = BffiBuilder()
+    earliest_bss_address, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+    bootexe = rom.boot_exe()[:earliest_bss_address-ipc]
+
+    tlb_os_base, entry_point, os_page = _raretlb_extract_entrypoint_and_page0(ipc, bootexe, preamble.crt_entry_point())
+    if entry_point is None:
+        return None
+
+    ipc_tlb = (ipc - 0x80000000) + tlb_os_base
+
+    unpack_offset = PERFECTDARK_UNPACK_PATTERN.find(bootexe[:0x4000])
+    if unpack_offset is None:
+        return None
+    
+    logger.info("found Perfect Dark unpacker")
+
+    consts = PERFECTDARK_UNPACK_PATTERN.consts(tlb_os_base, bootexe, unpack_offset)
+    swap_segment_rom_address       = consts["swap_segment_rom_address"].get_value()
+    data_segment_rom_start_address = consts["data_segment_rom_start_address"].get_value()
+    data_segment_rom_end_address   = consts["data_segment_rom_end_address"].get_value()
+    bootexe_segment_base_address   = consts["bootexe_segment_base_address"].get_value()
+    bootexe_segment_size           = consts["bootexe_segment_size"].get_value()
+    data_segment_load_address      = consts["data_segment_load_address"].get_value()
+
+    logger.info("boot segment: 0x%08x-0x%08x", bootexe_segment_base_address, bootexe_segment_base_address + bootexe_segment_size)
+
+    codeseg_base_address = bootexe_segment_base_address + bootexe_segment_size
+    codeseg_offset = (bootexe_segment_base_address + bootexe_segment_size) - ipc_tlb
+    if bootexe[codeseg_offset:codeseg_offset+2] != bytes([0x11, 0x73]):
+        raise RuntimeError("deflated code segment did not follow boot segment")
+    
+    dataseg_offset = ((data_segment_rom_start_address) + 0x70000000) - ipc_tlb
+    dataseg_end = ((data_segment_rom_end_address) + 0x70000000) - ipc_tlb
+    if bootexe[dataseg_offset:dataseg_offset+2] != bytes([0x11, 0x73]):
+        raise RuntimeError("deflated data segment not found where it should be")
+
+    # bootexe will be rebuilt shortly
+    boot_segment = bootexe[:codeseg_offset]
+
+    code_segment = bootexe[codeseg_offset:dataseg_offset]
+    code_decompressed_size = unpack_uint24_be(code_segment[2:5])
+
+    code_segment = zlib.decompress(code_segment[5:], wbits=-15)
+    if code_decompressed_size != len(code_segment):
+        raise RuntimeError(f"code decompressed size mismatch: expected {code_decompressed_size} got {len(code_segment)}")
+
+    logger.info("code segment: 0x%08x-0x%08x", codeseg_base_address, codeseg_base_address+len(code_segment))
+
+    datasegment_virtual_load_address   = (data_segment_load_address & 0x007FFFFF) + tlb_os_base
+    datasegment_expected_start_address = codeseg_base_address+len(code_segment) 
+
+    if datasegment_virtual_load_address != datasegment_expected_start_address:
+        raise RuntimeError("data segment did not immediately follow code segment")
+
+    data_segment = bootexe[dataseg_offset:dataseg_end]
+    data_decompressed_size = unpack_uint24_be(data_segment[2:5])
+
+    data_segment = zlib.decompress(data_segment[5:], wbits=-15)
+    if data_decompressed_size != len(data_segment):
+        raise RuntimeError(f"data decompressed size mismatch: expected {data_decompressed_size} got {len(data_segment)}")
+
+    logger.info("data segment: 0x%08x-0x%08x", datasegment_virtual_load_address, datasegment_virtual_load_address+len(data_segment))
+
+    # rebuild bootexe now that it's unpacked
+    bootexe = boot_segment + code_segment + data_segment
+
+    # now let's dump the swap data
+    swap = _perfectdark_dump_swap(rom.read_bytes_until_end(swap_segment_rom_address))
+
+    swap_pages = int(len(swap) / 0x10000)
+
+    tlb_entry_map = {}
+    tlb_entry_map[0] = os_page
+
+    # this is how the game maps the TLB when the expansion pak is present.
+    # when BFFI supports swap segments natively this will be replaced.
+    pages_out           = 0
+    tlb_entry_id        = 2
+    virtual_entry_base  = 0
+    physical_offset     = 0x00220000 # HACK: based on us v1.1, MIGHT be different in others!
+    while tlb_entry_id <= 0x1F and pages_out <= swap_pages:
+        entry = BffiTlbEntry()
+        entry.pagemask(TLB_PAGEMASK_64KBYTES)
+        entry.entryhi(0x7F000000 + virtual_entry_base)
+        entry.entrylo0( tlbutil_pack_entrylo(physical_offset, 0x1F) )
+        entry.entrylo1( tlbutil_pack_entrylo(physical_offset + 0x010000, 0x1F) )
+
+        logger.info("TLB entry %02x: map 0x%08x -> 0x%08x,0x%08x",
+                    tlb_entry_id,
+                    0x7F000000 + virtual_entry_base,
+                    physical_offset,
+                    physical_offset + 0x010000)
+
+        tlb_entry_map[tlb_entry_id] = entry
+
+        virtual_entry_base += 0x020000
+        physical_offset    += 0x020000
+        tlb_entry_id += 1
+        pages_out += 2
+
+    builder.fix(ipc_tlb, bootexe)
+    builder.fix(0x7F000000, swap)
+    builder.required_memory_size(8)
+    builder.initial_tlb(tlbutil_generate_bffi_tlb(tlb_entry_map))
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+    builder.initial_program_counter(entry_point)
+
+    return builder.build()
+

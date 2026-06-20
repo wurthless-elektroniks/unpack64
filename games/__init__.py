@@ -40,7 +40,7 @@ from .nintendo import sm64_unpack, drmario_unpack, mariokart_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .pm64 import pm64_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
-from .raretlb import conker_unpack, goldeneye_unpack
+from .raretlb import conker_unpack, goldeneye_unpack, perfectdark_unpack
 from .re2 import re2_unpack
 from .sarge  import sarge_unpack
 from .seta import shshogi_unpack
@@ -297,6 +297,18 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # GoldenEye 007 (E) [!]
     "40ff3643d3ed0be1b0b88266d298f455c15bd5a6f1a520c9aa2650b5f4b349de": goldeneye_unpack,
+
+    # Perfect Dark (U) (V1.0) [!]
+    "b4173ee90ba6e3514b17d7f340c6c248e2a4c429fdc3c671dd82bbf5afcbb152": perfectdark_unpack,
+
+    # Perfect Dark (U) (V1.1) [!]
+    "4e51142acac686d96861cecc58cf7cb7c3b06b21733b7f8ed609a709dc039a21": perfectdark_unpack,
+
+    # Perfect Dark (J) [!]
+    "d29a2fba12a5583d52bbd0b2a334fd66526b0744086bba0def871d9d0bb9daa3": perfectdark_unpack,
+
+    # Perfect Dark (E) (M5) [!]
+    "8e432b1a5f4ca512e2c22a1c3a5bb878ff6e92de2ddfebb1ba98e8d00e0394ff": perfectdark_unpack,
 
     # ------------------------------------------------------
     # Bust-A-Move '99 with .bss-less preamble, that instead initializes .bss
