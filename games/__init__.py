@@ -49,6 +49,7 @@ from .slugfest import slugfest_unpack
 from .softcreations import hexen_unpack
 from .sote import sote_unpack
 from .sparkrally import sparkrally_unpack
+from .stormfront import nascar99_unpack
 from .sw1racer import sw1racer_unpack
 from .titus import superman_unpack, roadsters_unpack
 from .tt import ts2_unpack
@@ -1380,6 +1381,19 @@ GAME_SPECIFIC_UNPACKERS = {
     # Wetrix (E) (M6) [!]
     # Very likely single load
     "17d5917ec3235e9e8aff54201d78bd01aa36377f81ac133ed0248d8ab1c61de5": None,
+
+    # ------------------------------------------------------
+    # Stormfront Studios
+    # ------------------------------------------------------
+
+    # NASCAR 99 (U) [!]
+    "800aa25d7b0275db5214bf81c6a537aa45f3ea7e01872fdf515c32cfbb6413bd": nascar99_unpack,
+
+    # NASCAR 99 (E) (M3) [!]
+    "148a7acb816c844c99af9289237666b7a421d24c7722616ad38f401006864e55": nascar99_unpack,
+
+    # NASCAR 2000 (U) [!]
+    "8ea70445136fad20584dbc4a1ca05f8b929332b35661c6a5766dcee27a8f1a65": nascar99_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
