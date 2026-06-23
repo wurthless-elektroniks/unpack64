@@ -1395,6 +1395,14 @@ GAME_SPECIFIC_UNPACKERS = {
     # NASCAR 2000 (U) [!]
     "8ea70445136fad20584dbc4a1ca05f8b929332b35661c6a5766dcee27a8f1a65": nascar99_unpack,
 
+    # Hot Wheels Turbo Racing (U) [!]
+    # Appears to be single load
+    "cdedbe26e64ee9a85c214ae85dceb68d14f52d39a01583d8b6a100d206f172a6": None,
+
+    # Hot Wheels Turbo Racing (E) (M3) [!]
+    # Appears to be single load
+    "7beda0bb4ef2435aa097094c8622950d4bd34e786bdb6ae30ecd5f390875089f": None,
+
     # ------------------------------------------------------
     # Confirmed single-load games
     #

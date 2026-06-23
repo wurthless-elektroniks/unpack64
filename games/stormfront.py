@@ -293,3 +293,31 @@ def nascar99_unpack(rom: N64Rom, ipc: int) -> Bffi:
 
     return builder.build()
 
+# ----------------------------------------------------------
+#
+# Hot Wheels Turbo Racing
+#
+# Either there's a bug in compression/hotwheels.py, or this is a single load game.
+# Based on the fact that the resource table's .OVL files don't contain MIPS bytecode
+# I'm calling this a single load game for now.
+#
+# This game has a simple filesystem table at 0x800f05f0.
+# It's structured as follows:
+#
+# - +0x00: pointer to filename string
+# - +0x04: little endian compression type
+#          0 - no compression (default)
+#          1 - one-shot
+#          2 - chunky (handler at 0x8006eeec)
+#          decompression routine at 0x8007f050
+# - +0x08: compressed file size 
+# - +0x0C: decompressed file size
+# - +0x10: size of first chunk in chunky mode, 0 if not chunky
+# - +0x14: ROM start address
+# - +0x18: ROM end address
+#
+# When reading in chunky mode, the chunk will start with an 8 byte header,
+# and then the compressed data will follow. The first 4 bytes are the size of the
+# next chunk, or 0 if this is the last chunk.
+#
+# ----------------------------------------------------------
