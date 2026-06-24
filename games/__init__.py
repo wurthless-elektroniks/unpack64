@@ -24,6 +24,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
+from .highvoltage import legoracers_unpack
 from .hudson import marioparty_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
@@ -1402,6 +1403,16 @@ GAME_SPECIFIC_UNPACKERS = {
     # Hot Wheels Turbo Racing (E) (M3) [!]
     # Appears to be single load
     "7beda0bb4ef2435aa097094c8622950d4bd34e786bdb6ae30ecd5f390875089f": None,
+
+    # ------------------------------------------------------
+    # High Voltage Software
+    # ------------------------------------------------------
+
+    # LEGO Racers (U) (M10) [!]
+    "dbbfdfde4abf4b0bec60470fe8ed412f2b0a360b9237066b952ef8d53f74c0ce": legoracers_unpack,
+
+    # LEGO Racers (E) (M10) [!]
+    "4709368b2f11fb724e91eaefe3aebc97b04e9c5d664f476d18cb5e48352c4af3": legoracers_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
