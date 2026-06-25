@@ -24,7 +24,7 @@ from .factor5 import rogue_unpack, indy_unpack
 from .forsaken import forsaken_unpack
 from .gauntlet import gauntlet_unpack
 from .hal import kirby64_unpack, smash64_unpack
-from .highvoltage import legoracers_unpack
+from .highvoltage import legoracers_unpack, paperboy_unpack
 from .hudson import marioparty_unpack
 from .human import airboarders_unpack
 from .iguana import turok_unpack, allstar99_unpack, nflqbc98_unpack
@@ -1413,6 +1413,12 @@ GAME_SPECIFIC_UNPACKERS = {
 
     # LEGO Racers (E) (M10) [!]
     "4709368b2f11fb724e91eaefe3aebc97b04e9c5d664f476d18cb5e48352c4af3": legoracers_unpack,
+
+    # Paperboy (U) [!]
+    "12cc5490a22e4af0fee6d40d15fda0281049860c61a5e30d864a071083191819": paperboy_unpack,
+
+    # Paperboy (E) [!]
+    "d4fab7f0a04d4c7dfc21ec66d3ae83a65c857bb346549e4a41ee6f2008086efa": paperboy_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
