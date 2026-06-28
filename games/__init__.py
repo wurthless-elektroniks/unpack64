@@ -1421,6 +1421,30 @@ GAME_SPECIFIC_UNPACKERS = {
     "d4fab7f0a04d4c7dfc21ec66d3ae83a65c857bb346549e4a41ee6f2008086efa": paperboy_unpack,
 
     # ------------------------------------------------------
+    # VIS Entertainment
+    # ------------------------------------------------------
+
+    # Earthworm Jim 3D (U) [!]
+    # Appears to be single-load
+    "fb21478839ba3f73b200a6b305d3d888fc38bf841e85454d68e4e5c8987c9890": None,
+
+    # Earthworm Jim 3D (E) (M6) [!]
+    # Appears to be single-load
+    "4beb08c33592bb98339c9e0d3df3d5511ea8ca064864be744fd07e29c76345e5": None,
+
+    # Powerpuff Girls, The - Chemical X-Traction (U) [!]
+    # Appears to be single-load
+    "4f0b777a71734e59a3fddce59f98661cba4ef653e0c4b1828b5891fd9814d160": None,
+
+    # Tom and Jerry in Fists of Furry (U) [!]
+    # Appears to be single-load
+    "ca15f99191e7a09d1334f209414375463c6897acde636d22638087f8a15b87fa": None,
+
+    # Tom and Jerry in Fists of Furry (E) (M6) [!]
+    # Appears to be single-load
+    "389bc437af911d02f02dbf1f5996d34b895ff1d61335ea9b8fbbfd8f1e5f2fa9": None,
+
+    # ------------------------------------------------------
     # Confirmed single-load games
     #
     # Any game that does not need to be unpacked should be blacklisted
