@@ -99,37 +99,41 @@ Nobody is that much of an insane idiot to do that, anyways. Except for me, of co
 
 Dynamically loaded and relocatable code segments:
 
-- 1080 Snowboarding (uses full DLL implementation with imports and exports)
-- Beetle Adventure Racing!
-- Dobutsu no Mori / Animal Forest (uses the Zelda framework)
-- Duck Dodgers Starring Daffy Duck
-- Indy Racing 2000
-- F-1 World Grand Prix
-- F-1 World Grand Prix II
-- Zelda: Ocarina of Time
-- Zelda: Majora's Mask
+| Game                              | Developer | Unpacker                             |
+|-----------------------------------|-----------|--------------------------------------|
+| 1080 Snowboarding                 | Nintendo  | (uso.py)[games/uso.py]               |
+| Beetle Adventure Racing!          | Paradigm  | (paradigm.py)[games/paradigm.py]     |
+| Doubutsu no Mori / Animal Forest  | Nintendo  | TODO                                 | 
+| Duck Dodgers Starring Daffy Duck  | Paradigm  | (paradigm.py)[games/paradigm.py]     |
+| Indy Racing 2000                  | Paradigm  | (paradigm.py)[games/paradigm.py]     |
+| F-1 World Grand Prix              | Paradigm  | (paradigm.py)[games/paradigm.py]     |
+| F-1 World Grand Prix II           | Paradigm  | (paradigm.py)[games/paradigm.py]     |
+| Zelda: Ocarina of Time            | Nintendo  | TODO                                 | 
+| Zelda: Majora's Mask              | Nintendo  | TODO                                 | 
 
 Games using virtual memory:
 
-- All-Star Baseball 2000
-- All-Star Baseball 2001
-- Armorines: Project S.W.A.R.M.
-- Conker's Bad Fur Day
-- GoldenEye 007
-- Indiana Jones and the Infernal Machine
-- Jeremy McGrath Supercross 2000
-- NBA Jam 2000
-- NFL Quarterback Club 99
-- NFL Quarterback Club 2000
-- NFL Quarterback Club 2001
-- Perfect Dark
-- Re-Volt
-- Star Wars Episode 1: Battle for Naboo
-- South Park
-- South Park: Chef's Luv Shack
-- Turok: Rage Wars
-- Turok 2: Seeds of Evil
-- Turok 3: Shadow of Oblivion
+| Game                                    | Developer             | Unpacker                             | 
+|-----------------------------------------|-----------------------|--------------------------------------|
+| All-Star Baseball 2000                  | Iguana                | (iguanatlb.py)[games/iguanatlb.py]   |
+| All-Star Baseball 2001                  | Iguana                | (iguanatlb.py)[games/iguanatlb.py]   |
+| Armorines: Project S.W.A.R.M.           | Iguana UK             | (acclaim.py)[games/acclaim.py]       |
+| Conker's Bad Fur Day                    | Rare                  | (raretlb.py)[games/raretlb.py]       |
+| GoldenEye 007                           | Rare                  | (raretlb.py)[games/raretlb.py]       |
+| Indiana Jones and the Infernal Machine  | Factor 5              | (factor5.py)[games/factor5.py]       |
+| Jeremy McGrath Supercross 2000          | Acclaim Salt Lake     | (iguanatlb.py)[games/iguanatlb.py]   |
+| NBA Jam 2000                            | Acclaim Salt Lake     | (iguanatlb.py)[games/iguanatlb.py]   |
+| NFL Quarterback Club 99                 | Iguana                | (iguanatlb.py)[games/iguanatlb.py]   |
+| NFL Quarterback Club 2000               | Acclaim Austin        | (iguanatlb.py)[games/iguanatlb.py]   |
+| NFL Quarterback Club 2001               | High Voltage Software | (iguanatlb.py)[games/iguanatlb.py]   |
+| Perfect Dark                            | Rare                  | (raretlb.py)[games/raretlb.py]       |
+| Re-Volt                                 | Probe                 | (acclaim.py)[games/acclaim.py]       |
+| Star Wars Episode 1: Battle for Naboo   | Factor 5              | (factor5.py)[games/factor5.py]       |
+| South Park                              | Iguana                | (acclaim.py)[games/acclaim.py]       |
+| South Park: Chef's Luv Shack            | Iguana                | (iguanatlb.py)[games/iguanatlb.py]   |
+| Turok: Rage Wars                        | Iguana                | (acclaim.py)[games/acclaim.py]       |
+| Turok 2: Seeds of Evil                  | Iguana                | (acclaim.py)[games/acclaim.py]       |
+| Turok 3: Shadow of Oblivion             | Iguana                | (acclaim.py)[games/acclaim.py]       |
 
 Serious boot executable abuse:
 
