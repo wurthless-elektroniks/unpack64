@@ -6,6 +6,8 @@ implementing a full debugger here...
 import logging
 import struct
 
+from datautil import unpack_uint32_be
+
 
 logger = logging.Logger(__name__)
 
@@ -92,8 +94,11 @@ def assemble_jal(target_address: int) -> bytes:
 
 def make_andmask_load_store(mask_dest: bool = False,
                             mask_offs: bool = False,
-                            mask_imm16: bool = False):
+                            mask_imm16: bool = False,
+                            mask_opcode: bool = False):
     base_mask = 0xFFFFFFFF
+    if mask_opcode:
+        base_mask &= 0b00000011_11111111_11111111_11111111
     if mask_offs:
         base_mask &= 0b11111100_00011111_11111111_11111111
     if mask_dest:
@@ -189,3 +194,14 @@ def extract_range_from_lui_addiu_pairs(bindat: bytes, pattern_offset: int):
 
     output.sort()
     return output
+
+def decode_imm16_rt_rs_target_register(instruction: int | bytes) -> int:
+    if isinstance(instruction, bytes):
+        instruction = unpack_uint32_be(instruction)
+    return (instruction & unpack_uint32_be(make_andmask_load_store(mask_opcode=True, mask_offs=True, mask_imm16=True))) >> 16
+
+def decode_imm16_rt_rs_offset_register(instruction: int | bytes) -> int:
+    if isinstance(instruction, bytes):
+        instruction = unpack_uint32_be(instruction)
+    return (instruction & unpack_uint32_be(make_andmask_load_store(mask_opcode=True, mask_dest=True, mask_imm16=True))) >> 21
+

@@ -67,18 +67,36 @@ class Reloc:
     
     def target_section_offset(self) -> int:
         return self._target_section_offset
+    
+    def __str__(self):
+        return f"{self._type.name}: {self._section.printable()}+0x{self._section_offset:06x}->{self._target_section.printable()}+0x{self._target_section_offset:06x}"
 
 # to be fed into apply_relocations() to enforce pass-by-reference
 # and to simplify calling
 class RelocatableBinary:
     def __init__(self,
                  contents: bytes,
-                 section_base_offsets: dict[RelocSection,int]):
+                 section_ranges: list[tuple[int,int,RelocSection]]):
 
         self._contents = bytearray(contents)
-        self._section_base_offsets = section_base_offsets
+
+        self._section_ranges = section_ranges
+        
+        self._section_base_offsets = {}
+        for section_start, _, section_type in section_ranges:
+            self._section_base_offsets[section_type] = section_start
+
         pass
 
+    def absolute_offset_to_section_and_offset(self, offset: int) -> tuple[RelocSection|None,int|None]:
+        '''
+        Lookup section_id+offset from an absolute offset.
+        '''
+        for range_start, range_end, section_type in self._section_ranges:
+            if range_start <= offset < range_end:
+                return section_type, offset-range_start
+        return None, None
+    
     def section_base_offset(self, section: RelocSection):
         return self._section_base_offsets[section]
     
