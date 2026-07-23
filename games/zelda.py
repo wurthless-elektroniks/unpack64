@@ -15,6 +15,14 @@ loads them to not only know where those modules are supposed to be loaded in vir
 but also where important functions (init, destroy, etc.) are located so that the engine
 can call them. This makes this loader setup maximally unfriendly to dump.
 
+The virtual RAM setup should in theory allow for importing symbols from other overlays,
+but it doesn't appear that the games do this. Dobutsu no Mori uses hi16/lo16 relocs that
+look like they're referencing other overlays, but the decomp project points out that the
+compiler actually stapled a large offset onto those relocs. Additionally, the relocator
+does not check if a virtual address belongs to the module it's loading or not.
+As all evidence here shows this doesn't support a native import scheme, I'm leaving
+import support out of this.
+
 The Zelda community has reverse engineered these games almost completely so
 there's not much point adding this to unpack64, but I have to be as thorough
 as possible...
@@ -41,7 +49,7 @@ from datautil import unpack_uint32_be
 from n64rom import N64Rom, ROMENDIANNESS_BIG
 from mips import decode_imm16_rt_rs_target_register, decode_imm16_rt_rs_offset_register
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi, Preamble
-from reloc import RelocSection, RelocType, Reloc, RelocatableBinary, demunge_mips_hilo_offset
+from reloc import RelocSection, RelocType, Reloc, RelocatableBinary, demunge_mips_hilo_offset, apply_relocations
 from signature import SignatureBuilder, WILDCARD, Signature
 from sigutil import pick_pattern, contains_code
 
@@ -251,13 +259,15 @@ def _zelda_lookup_binary_id_by_virtual_address(address: int,
                                                all_binaries: list[tuple[int,int,RelocatableBinary]]) -> int | None:
     for i, tup in enumerate(all_binaries):
         vram_start, vram_end, _ = tup
-        if vram_start <= address < vram_end:
+
+        # has to be inclusive as one actor in dobutsu has a reloc pointing to the end of its VRAM space
+        if vram_start <= address <= vram_end:
             return i
     return None
 
 def _zelda_parse_relocations(binary: RelocatableBinary,
-                             reloc_words: list[int],
-                             all_binaries: list[int,int,RelocatableBinary]):
+                             binary_vram_start: int,
+                             reloc_words: list[int]):
 
     #
     # bits 31,30 are section IDs.
@@ -300,43 +310,25 @@ def _zelda_parse_relocations(binary: RelocatableBinary,
         if reloc_type == RelocType.R_MIPS_26:
             target_absolute_offset = ((original_instruction & 0x03FFFFFF) << 2) + 0x80000000
 
-            bin_id = _zelda_lookup_binary_id_by_virtual_address(target_absolute_offset,
-                                                                all_binaries)
-            if bin_id is None:
-                raise RuntimeError(f"R_MIPS_26: import from not-yet-loaded module at address 0x{target_absolute_offset:08x}")
-
-            remote_bin              = all_binaries[bin_id][2]
-            remote_bin_load_address = all_binaries[bin_id][0]
-            module_id = -1 if remote_bin == binary else bin_id
-
-            target_section, target_offset = remote_bin.absolute_offset_to_section_and_offset(target_absolute_offset - remote_bin_load_address)            
+            target_section, target_offset = binary.absolute_offset_to_section_and_offset(target_absolute_offset - binary_vram_start)            
             
             if None in [target_section, target_offset]:
                 raise RuntimeError(f"illegal target offset {target_absolute_offset:08x} opcode {original_instruction:08x}")
-
+                
             relocs.append( Reloc(RelocType.R_MIPS_26,
                                  reloc_section,
                                  reloc_offset,
                                  target_section,
-                                 target_offset,
-                                 target_module_id=module_id
+                                 target_offset
                                  ))
         
         elif reloc_type == RelocType.R_MIPS_32:
             target_absolute_offset = original_instruction
 
-            bin_id = _zelda_lookup_binary_id_by_virtual_address(target_absolute_offset,
-                                                                all_binaries)
-            if bin_id is None:
-                raise RuntimeError(f"R_MIPS_32: import from not-yet-loaded module at address 0x{target_absolute_offset:08x}")
-
-            remote_bin              = all_binaries[bin_id][2]
-            remote_bin_load_address = all_binaries[bin_id][0]
-            module_id = -1 if remote_bin == binary else bin_id
-
-            target_section, target_offset = remote_bin.absolute_offset_to_section_and_offset(target_absolute_offset - remote_bin_load_address)
+            target_section, target_offset = binary.absolute_offset_to_section_and_offset(target_absolute_offset - binary_vram_start)   
             if None in [target_section, target_offset]:
                 raise RuntimeError(f"illegal target offset! vram address = 0x{target_absolute_offset:08x}")
+            
 
             relocs.append( Reloc(RelocType.R_MIPS_32,
                                  reloc_section,
@@ -362,35 +354,34 @@ def _zelda_parse_relocations(binary: RelocatableBinary,
             hi16 = hi16s[offset_register]
             last_hi16_instruction = hi16.instruction()
             target_absolute_offset = demunge_mips_hilo_offset(last_hi16_instruction, original_instruction)
-            
-            bin_id = _zelda_lookup_binary_id_by_virtual_address(target_absolute_offset,
-                                                                all_binaries)
-            if bin_id is None:
-                raise RuntimeError(f"R_MIPS_HI16/R_MIPS_LO16: import from not-yet-loaded module at address 0x{target_absolute_offset:08x}")
 
-            remote_bin              = all_binaries[bin_id][2]
-            remote_bin_load_address = all_binaries[bin_id][0]
-            module_id = -1 if remote_bin == binary else bin_id
-
-            target_section, target_offset = remote_bin.absolute_offset_to_section_and_offset(target_absolute_offset - remote_bin_load_address)
+            target_section, target_offset = binary.absolute_offset_to_section_and_offset(target_absolute_offset - binary_vram_start)
             if None in [target_section, target_offset]:
-                raise RuntimeError(f"hi16/lo16: illegal target offset. absolute target +0x{target_absolute_offset:06x} hi16 {last_hi16_instruction:08x} lo16 {original_instruction:08x}")
+                # a few dlls in dobutsu reference addresses outside the ranges of their text/data space.
+                # for these, pick any available section and use it as the base
+                target_section       = binary.section_types_present()[0]
+                target_section_base  = binary_vram_start + binary.section_base_offset(target_section)
+
+                target_offset = target_absolute_offset - target_section_base
+
+                logger.warning("hi16/lo16: reference to absolute offset 0x%08x, which is out of bounds. reloc will point to %s%#+6x.",
+                               target_absolute_offset,
+                               target_section.printable(),
+                               target_offset)
 
             if hi16.applied() is False:
                 relocs.append(Reloc(RelocType.R_MIPS_HI16,
                                     hi16.section(),
                                     hi16.offset(),
                                     target_section,
-                                    target_offset,
-                                    target_module_id = module_id))
+                                    target_offset))
                 hi16.applied(True)
 
             relocs.append(Reloc(RelocType.R_MIPS_LO16,
                 reloc_section,
                 reloc_offset,
                 target_section,
-                target_offset,
-                target_module_id = module_id))
+                target_offset))
         else:
             raise RuntimeError("illegal reloc type")
 
@@ -413,6 +404,11 @@ def _zelda_load_dll_from_rom(rom: N64Rom,
         relocs.append( unpack_uint32_be(relocs_bytes[i*4:(i+1)*4]) )
 
     bindata = rom.read_bytes(dll_code_start_offset, dll_code_end_offset-dll_code_start_offset) + bytes([0] * bss_size)
+
+    if bss_size != 0:
+        logger.info("bss adjust: sizeof before %d, sizeof after %d",
+                    dll_code_end_offset-dll_code_start_offset,
+                    len(bindata))
 
     # binary is flattened already, so the order will be text/data/rodata, in that order
     segment_ranges = []
@@ -437,9 +433,10 @@ def _zelda_decode_dll_entries_generic(dll_table_blob: bytes, entry_consumer) -> 
     entries = []
     while True:
         parsed_entry, num_bytes = entry_consumer(dll_table_blob[offset:])
-        if parsed_entry is None:
+        if num_bytes is None:
             return entries
-        entries.append(parsed_entry)
+        if parsed_entry is not None:
+            entries.append(parsed_entry)
         offset += num_bytes
 
 # ------------------------------------------------
@@ -522,6 +519,27 @@ DOBUTSU_GAMESTATE_DLL_TABLE_LOOKUP_PATTERN = SignatureBuilder() \
     .const_op32_lo16("dll_table_base", 0x28) \
     .build()
 
+# see decomp, src/code/m_actor.c, Actor_info_make_actor()
+DOBUTSU_ACTOR_DLL_TABLE_LOOKUP_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x27, 0xbd, 0xff, 0x90,         # +0x00 addiu      sp,sp,-0x70
+        0xaf, 0xa6, 0x00, 0x78,         # +0x04 sw         param_3,local_res8(sp)
+        0x00, 0x06, 0x34, 0x00,         # +0x08 sll        param_3,param_3,0x10
+        0x00, 0x06, 0x34, 0x03,         # +0x0C sra        param_3,param_3,0x10
+        0xaf, 0xbf, 0x00, 0x4c,         # +0x10 sw         ra,local_24(sp)
+        0xaf, 0xb0, 0x00, 0x48,         # +0x14 sw         s0,local_28(sp)
+        0xaf, 0xa4, 0x00, 0x70,         # +0x18 sw         param_1,local_res0(sp)
+        0xaf, 0xa5, 0x00, 0x74,         # +0x1C sw         param_2,local_res4(sp)
+        0xaf, 0xa7, 0x00, 0x7c,         # +0x20 sw         param_4,local_resc(sp)
+        0x8f, 0xa8, 0x00, 0x70,         # +0x24 lw         t0,local_res0(sp)
+        0x3c, 0x0f, 0x80, WILDCARD,     # +0x28 lui        t7,0x8010 <-- actor table base (entry 0 = dummy)
+        0x25, 0xef, WILDCARD, WILDCARD, # +0x2C addiu      t7,t7,0xc90
+    ]) \
+    .const_op32_hi16("dll_table_base", 0x28) \
+    .const_op32_lo16("dll_table_base", 0x2C) \
+    .build()
+    
+
 def _dobutsu_consume_gamestate_dll_entry(data: bytes) -> tuple[ZeldaDllEntry, int]:
     _, vrom_start, vrom_end, vram_start, \
     vram_end, _, init_fcn_address, destroy_fcn_address, \
@@ -542,6 +560,25 @@ def _dobutsu_consume_gamestate_dll_entry(data: bytes) -> tuple[ZeldaDllEntry, in
                           exports=exports)
     
     return entry, 4*12
+
+def _dobutsu_consume_actor_dll_entry(data: bytes) -> tuple[ZeldaDllEntry, int]:
+    # if data is all zero, skip it and move on to the next entry.
+    # there are records in the actor table that are completely null
+    if data[0:4*8] == bytes([0] * (4*8)):
+        return None, 4*8
+
+    vrom_start, vrom_end, vram_start, vram_end, \
+    _, actor_profile_struct_addr, _, _ = struct.unpack(">IIIIIIII", data[0:4*8])
+
+    if (vram_start & 0xFF800000) != 0x80800000:
+        return None, None
+    
+    entry = ZeldaDllEntry(vrom_start,
+                          vrom_end,
+                          vram_start,
+                          vram_end)
+    
+    return entry, 4*8
 
 
 def dobutsu_unpack(rom: N64Rom, ipc: int):
@@ -601,47 +638,74 @@ def dobutsu_unpack(rom: N64Rom, ipc: int):
     builder.fix(mainseg_load_address, payload)
 
     # find gamestate DLLs
-    dll_lookup_offset = DOBUTSU_GAMESTATE_DLL_TABLE_LOOKUP_PATTERN.find(payload)
-    if dll_lookup_offset is None:
+    gamestate_dll_lookup_offset = DOBUTSU_GAMESTATE_DLL_TABLE_LOOKUP_PATTERN.find(payload)
+    if gamestate_dll_lookup_offset is None:
         logger.error("cannot find gamestate DLL lookup function")
         return None
     
-    consts = DOBUTSU_GAMESTATE_DLL_TABLE_LOOKUP_PATTERN.consts(mainseg_load_address, payload, dll_lookup_offset)
-    dll_table_base = consts["dll_table_base"].get_value()
-    logger.info("gamestate dll table base at 0x%08x", dll_table_base)
+    consts = DOBUTSU_GAMESTATE_DLL_TABLE_LOOKUP_PATTERN.consts(mainseg_load_address, payload, gamestate_dll_lookup_offset)
+    gamestate_dll_table_base = consts["dll_table_base"].get_value()
+    logger.info("gamestate dll table base at 0x%08x", gamestate_dll_table_base)
+
+    # find actor DLLs
+    actor_dll_lookup_offset = DOBUTSU_ACTOR_DLL_TABLE_LOOKUP_PATTERN.find(payload)
+    if actor_dll_lookup_offset is None:
+        logger.error("cannot find actor DLL lookup function")
+        return None
+    
+    consts = DOBUTSU_ACTOR_DLL_TABLE_LOOKUP_PATTERN.consts(mainseg_load_address, payload, actor_dll_lookup_offset)
+    actor_dll_table_base = consts["dll_table_base"].get_value() + (4*8) # because first entry is a dummy entry
+    logger.info("actor_dll_lookup_offset dll table base at 0x%08x", actor_dll_table_base)
+
 
     logger.info("inflating virtual ROM...")
     virtual_rom = _zelda_inflate_virtual_rom(rom, rom_dma_table_start)
 
-    gamestate_dll_entries = _zelda_decode_dll_entries_generic(payload[(dll_table_base - mainseg_load_address):], _dobutsu_consume_gamestate_dll_entry)
+    gamestate_dll_entries = _zelda_decode_dll_entries_generic(payload[(gamestate_dll_table_base - mainseg_load_address):], _dobutsu_consume_gamestate_dll_entry)
+    actor_dll_entries = _zelda_decode_dll_entries_generic(payload[(actor_dll_table_base - mainseg_load_address):], _dobutsu_consume_actor_dll_entry)
+
 
     modules: list[tuple[int,int,RelocatableBinary]] = []
     module_relocs: list[list[int]] = []
-    for gamestate_dll_entry in gamestate_dll_entries:
-        vrom_start = gamestate_dll_entry.vrom_start()
-        vrom_end   = gamestate_dll_entry.vrom_end()
-        vram_start = gamestate_dll_entry.vram_start()
-        vram_end   = gamestate_dll_entry.vram_end()
+    for dll_entry in gamestate_dll_entries + actor_dll_entries:
+        vrom_start = dll_entry.vrom_start()
+        vrom_end   = dll_entry.vrom_end()
+        vram_start = dll_entry.vram_start()
+        vram_end   = dll_entry.vram_end()
         
-        logger.info("game segment: VROM 0x%08x-0x%08x -> VRAM 0x%08x-0x%08x",
+        logger.info("found DLL module: VROM 0x%08x-0x%08x -> VRAM 0x%08x-0x%08x",
             vrom_start,
             vrom_end,
             vram_start,
             vram_end)
         
-        gameseg_dll_binary, gameseg_reloc_words = _zelda_load_dll_from_rom(virtual_rom, vrom_start, vrom_end, vrom_end)
+        dll_binary, reloc_words = _zelda_load_dll_from_rom(virtual_rom, vrom_start, vrom_end, vrom_end)
 
-        modules.append((vram_start,vram_end,gameseg_dll_binary))
-        module_relocs.append(gameseg_reloc_words)
+        if (vram_start+dll_binary.sizeof()) != vram_end:
+            logger.info("adjusting vram_end from 0x%08x to 0x%08x", vram_end, vram_start+dll_binary.sizeof())
+
+        modules.append((vram_start,vram_start+dll_binary.sizeof(),dll_binary))
+        module_relocs.append(reloc_words)
     
     # now that modules are loaded, we can parse the reloc lists
     for i, modtuple in enumerate(modules):
-        _, _, module = modtuple
+        module_vram_start, _, module = modtuple
 
-        relocs = _zelda_parse_relocations(module, module_relocs[i], modules)
-        for reloc in relocs:
-            logger.debug("%s", reloc)
+        logger.info("parse relocs for module #%d (=0x%08x)",
+                    i,
+                    modules[i][0])
+        relocs = _zelda_parse_relocations(module, module_vram_start, module_relocs[i])
 
-    # TODO: define relocs/modules in the BFFI format
+        # relocate this module to 0x10000000
+        relocs_applied = apply_relocations(0x10000000,
+                                           module,
+                                           relocs,
+                                           destroying_offsets_in_binary=True)
+
+
+        # TODO: define relocs/modules in the BFFI format
+        builder.seg(0x10000000,
+                    module.contents(),
+                    i)
 
     return builder.build()

@@ -69,7 +69,7 @@ class Reloc:
         return self._target_section_offset
     
     def __str__(self):
-        return f"{self._type.name}: {self._section.printable()}+0x{self._section_offset:06x}->{self._target_section.printable()}+0x{self._target_section_offset:06x}"
+        return f"{self._type.name}: {self._section.printable()}{self._section_offset:+x}->{self._target_section.printable()}{self._target_section_offset:+x}"
 
 # to be fed into apply_relocations() to enforce pass-by-reference
 # and to simplify calling
@@ -93,11 +93,16 @@ class RelocatableBinary:
         Lookup section_id+offset from an absolute offset.
         '''
         for range_start, range_end, section_type in self._section_ranges:
-            if range_start <= offset < range_end:
+            if range_start <= offset <= range_end:
                 return section_type, offset-range_start
         return None, None
     
+    def sizeof(self):
+        return len(self._contents)
+    
     def section_base_offset(self, section: RelocSection):
+        if section not in self._section_base_offsets:
+            return None
         return self._section_base_offsets[section]
     
     def read32(self, offset: int) -> int:
@@ -112,6 +117,12 @@ class RelocatableBinary:
             self._contents[offset:offset+4] = struct.pack(">I", data)
         else:
             raise RuntimeError("typeof data not bytes or int")
+
+    def section_types_present(self) -> list[RelocSection]:
+        return list(self._section_base_offsets.keys())
+
+    def contents(self) -> bytes:
+        return bytes(self._contents)
 
 # ------------------------------------------------------------------------------------
 
@@ -164,7 +175,8 @@ def munge_mips_hilo_offset(offset: int) -> tuple[int,int]:
 def apply_relocations(flattened_binary_load_address: int,
                       flattened_binary: RelocatableBinary,
                       relocs: list[Reloc],
-                      foreign_module_section_offset_maps: dict[int,dict[RelocSection,int]] | None = None) -> list[tuple[Reloc,bytes]]:
+                      foreign_module_section_offset_maps: dict[int,dict[RelocSection,int]] | None = None,
+                      destroying_offsets_in_binary: bool = False) -> list[tuple[Reloc,bytes]]:
 
     '''
     Applies relocations to a flattened binary and returns a list of changes made.
@@ -172,6 +184,10 @@ def apply_relocations(flattened_binary_load_address: int,
     The reason we must use a flattened binary, instead of random sections at random load addresses,
     is because some loaders (the Paradigm loader in particular) have malformed relocation data that
     expects sections to be loaded in sequence, rather than in random locations.
+
+    - destroying_offsets_in_binary: If true, the relocator will assume a base target offset of zero
+      for all relocations it encounters. This means if we have an imm26 instruction like `0c003fc1`,
+      the relocator will ignore the target and pretend as if it was `0c000000`.
     '''
 
     # these are relocs that were applied, and the original opcodes (or imm32 data)
@@ -185,15 +201,15 @@ def apply_relocations(flattened_binary_load_address: int,
         reloc_type = reloc.type()
         
         reloc_offset = flattened_binary.section_base_offset(reloc.section()) + reloc.section_offset()
-        original_instruction = struct.unpack(">I",flattened_binary_load_address[reloc_offset:reloc_offset+4])[0]
+        original_instruction = flattened_binary.read32(reloc_offset)
         
         if reloc.target_module_id() == -1:
             # target is a local
             target_section = reloc.target_section()
-
-            
             target_offset = flattened_binary.section_base_offset(target_section) + reloc.target_section_offset()
-            if (0 <= target_offset <= len(flattened_binary)):
+
+            if (0 <= target_offset <= flattened_binary.sizeof()) is False and \
+                destroying_offsets_in_binary is False:
                 raise RuntimeError("absolute offset went outside of the flattened binary map")
 
             target_address = flattened_binary_load_address + target_offset
@@ -217,7 +233,7 @@ def apply_relocations(flattened_binary_load_address: int,
             hibits = original_instruction & 0xFC000000
             lo26   = original_instruction & 0x03FFFFFF
 
-            unpatched_offset = (lo26 << 2)
+            unpatched_offset = 0 if destroying_offsets_in_binary else (lo26 << 2)
             patched_offset = unpatched_offset + (target_address & 0x03FFFFFF)
 
             patched_instruction = hibits | (patched_offset >> 2)
@@ -233,8 +249,8 @@ def apply_relocations(flattened_binary_load_address: int,
             flattened_binary.write32(reloc_offset, patched_instruction)
             
         elif reloc_type == RelocType.R_MIPS_32:
-            patched_instruction = original_instruction + target_address
-
+            patched_instruction = (0 if destroying_offsets_in_binary else original_instruction) + target_address
+            
             logger.debug("R_MIPS_32: at 0x%06x (%s+0x%06x) change %08x to %08x",
                 reloc_offset,
                 reloc.section().printable(),
@@ -260,7 +276,8 @@ def apply_relocations(flattened_binary_load_address: int,
     
         elif reloc_type == RelocType.R_MIPS_LO16:
             if last_hi16_relocation is not None:
-                offset = demunge_mips_hilo_offset(last_hi16_instruction, original_instruction)
+                offset = 0 if destroying_offsets_in_binary else demunge_mips_hilo_offset(last_hi16_instruction, original_instruction)
+
                 absolute_address = target_address + offset
 
                 patched_hi16_value, patched_lo16_value = munge_mips_hilo_offset(absolute_address)
