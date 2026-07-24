@@ -6,19 +6,9 @@ implementing a full debugger here...
 import logging
 import struct
 
-from datautil import unpack_uint32_be
-
+from datautil import unpack_uint32_be, unpack_uint16_be, unpack_int16_be
 
 logger = logging.Logger(__name__)
-
-def _to_uint32(data: bytes):
-    return struct.unpack(">I", data)[0]
-
-def _to_uint16(data: bytes):
-    return struct.unpack(">H", data)[0]
-
-def _to_int16(data: bytes):
-    return struct.unpack(">h", data)[0]
 
 def _instruction_template_jtype(op):
     if op > 0b111111:
@@ -33,24 +23,24 @@ def _instruction_template_rtype(op, func):
     
     return bytearray( list([ op << 2, 0, 0, func]) )
 
-INSTRUCTION_DECODE_BITMASK_UPPER_6       = _to_uint32( bytes([ 0b11111100, 0, 0, 0 ]) )
-INSTRUCTION_DECODE_BITMASK_0_AND_LOWER_6 = _to_uint32( bytes([ 0b11111100, 0, 0, 0b00111111 ]) )
+INSTRUCTION_DECODE_BITMASK_UPPER_6       = unpack_uint32_be( bytes([ 0b11111100, 0, 0, 0 ]) )
+INSTRUCTION_DECODE_BITMASK_0_AND_LOWER_6 = unpack_uint32_be( bytes([ 0b11111100, 0, 0, 0b00111111 ]) )
 
-INSTRUCTION_ADDI_TEMPLATE  = _to_uint32(_instruction_template_jtype(0b001000))
-INSTRUCTION_ADDIU_TEMPLATE = _to_uint32(_instruction_template_jtype(0b001001))
-INSTRUCTION_LUI_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b001111))
-INSTRUCTION_JAL_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b000011))
-INSTRUCTION_JMP_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b000010))
-INSTRUCTION_ORI_TEMPLATE   = _to_uint32(_instruction_template_jtype(0b001101))
-INSTRUCTION_LW_TEMPLATE  = _to_uint32(_instruction_template_jtype(0b100011))
-INSTRUCTION_LHU_TEMPLATE = _to_uint32(_instruction_template_jtype(0b100101))
-INSTRUCTION_SW_TEMPLATE = _to_uint32(_instruction_template_jtype(0b101011))
+INSTRUCTION_ADDI_TEMPLATE  = unpack_uint32_be(_instruction_template_jtype(0b001000))
+INSTRUCTION_ADDIU_TEMPLATE = unpack_uint32_be(_instruction_template_jtype(0b001001))
+INSTRUCTION_LUI_TEMPLATE   = unpack_uint32_be(_instruction_template_jtype(0b001111))
+INSTRUCTION_JAL_TEMPLATE   = unpack_uint32_be(_instruction_template_jtype(0b000011))
+INSTRUCTION_JMP_TEMPLATE   = unpack_uint32_be(_instruction_template_jtype(0b000010))
+INSTRUCTION_ORI_TEMPLATE   = unpack_uint32_be(_instruction_template_jtype(0b001101))
+INSTRUCTION_LW_TEMPLATE  = unpack_uint32_be(_instruction_template_jtype(0b100011))
+INSTRUCTION_LHU_TEMPLATE = unpack_uint32_be(_instruction_template_jtype(0b100101))
+INSTRUCTION_SW_TEMPLATE = unpack_uint32_be(_instruction_template_jtype(0b101011))
 
-INSTRUCTION_OR_TEMPLATE    = _to_uint32(_instruction_template_rtype(0, 0b100111))
-INSTRUCTION_SUBU_TEMPLATE  = _to_uint32(_instruction_template_rtype(0, 0b100011))
+INSTRUCTION_OR_TEMPLATE    = unpack_uint32_be(_instruction_template_rtype(0, 0b100111))
+INSTRUCTION_SUBU_TEMPLATE  = unpack_uint32_be(_instruction_template_rtype(0, 0b100011))
 
 def disassemble_jump_imm26_target(oporg: int, opbytes: bytes) -> int | None:
-    opword = _to_uint32(opbytes)
+    opword = unpack_uint32_be(opbytes)
     masked = (opword & INSTRUCTION_DECODE_BITMASK_UPPER_6)
 
     if masked in [ INSTRUCTION_JAL_TEMPLATE, INSTRUCTION_JMP_TEMPLATE ]:
@@ -60,14 +50,14 @@ def disassemble_jump_imm26_target(oporg: int, opbytes: bytes) -> int | None:
     return None
 
 def disassemble_imm16_rt_rs_target(oporg: int, opbytes: bytes) -> int | None:
-    opword = _to_uint32(opbytes)
+    opword = unpack_uint32_be(opbytes)
     masked = (opword & INSTRUCTION_DECODE_BITMASK_UPPER_6)
 
     if masked in [ INSTRUCTION_ADDI_TEMPLATE, INSTRUCTION_ADDIU_TEMPLATE ]:
-        return _to_int16(opbytes[2:4])
+        return unpack_int16_be(opbytes[2:4])
 
     if masked in [ INSTRUCTION_ORI_TEMPLATE ]:
-        return _to_uint16(opbytes[2:4])
+        return unpack_uint16_be(opbytes[2:4])
     
     if masked == INSTRUCTION_LUI_TEMPLATE:
         return (opword & 0xFFFF) << 16
@@ -77,13 +67,13 @@ def disassemble_imm16_rt_rs_target(oporg: int, opbytes: bytes) -> int | None:
     return None
 
 def disassemble_load_store_imm16(oporg: int, opbytes: bytes) -> int | None:
-    opword = _to_uint32(opbytes)
+    opword = unpack_uint32_be(opbytes)
     masked = (opword & INSTRUCTION_DECODE_BITMASK_UPPER_6)
 
     if masked in [ INSTRUCTION_LW_TEMPLATE,
                    INSTRUCTION_SW_TEMPLATE,
                    INSTRUCTION_LHU_TEMPLATE]:
-        return _to_int16(opbytes[2:4])
+        return unpack_int16_be(opbytes[2:4])
 
     # unrecognized opcode - give up
     logger.error("unrecognized opcode, masked result was: %04x", opword)
@@ -149,8 +139,8 @@ def _demunge_mips_hilo_offset(hi16_op: bytes, lo16_op: bytes) -> int:
     Assumes lo16 will be an opcode that works on signed integers
     (addiu, lui, etc.).
     '''
-    hi16_instruction = struct.unpack(">I", hi16_op)[0]
-    lo16_instruction = struct.unpack(">I", lo16_op)[0]
+    hi16_instruction = unpack_uint32_be(hi16_op)
+    lo16_instruction = unpack_uint32_be(lo16_op)
 
     hi16 = hi16_instruction & 0xFFFF
     lo16_sign_extended = struct.unpack(">hh", struct.pack(">I", lo16_instruction))[1]

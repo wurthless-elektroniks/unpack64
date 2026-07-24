@@ -44,6 +44,8 @@ import struct
 
 from compression.yaz0 import yaz0_decompress
 
+from .zeldavrom import zeldavrom_inflate_virtual_rom, zeldavrom_dmatable_present
+
 from bffi import Bffi,BffiBuilder
 from datautil import unpack_uint32_be
 from n64rom import N64Rom, ROMENDIANNESS_BIG
@@ -128,142 +130,6 @@ class ZeldaDllEntry:
 
     def exports(self):
         return dict(self._exports)
-
-# ------------------------------------------------
-#
-# Common stuff: virtual ROM setup, relocations, etc.
-#
-# ------------------------------------------------
-
-def _zelda_framework_signature_matches(first_16: bytes):
-    return first_16 == bytes([0x00,0x00,0x00,0x00,
-                              0x00,0x00,0x10,0x60,
-                              0x00,0x00,0x00,0x00,
-                              0x00,0x00,0x00,0x00,
-                            ])
-
-def _zelda_framework_is_used(rom: N64Rom,
-                             ipc: int,
-                             preamble: Preamble):
-
-    # DMA table immediately follows boot segment in ROM
-    # this is true for zelda oot, dobutsu
-    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, None)
-    dmatable_rom_offset = (earliest_bss - ipc) + 0x1000
-
-    first_16 = rom.read_bytes(dmatable_rom_offset, 0x10)
-    return _zelda_framework_signature_matches(first_16)
-
-def _zelda_parse_dma_table(rom: N64Rom,
-                           dmadata_table_offset: int):
-    
-    table_entries = []
-    vrom_sizeof = 0
-
-    while True:
-        vrom_start, \
-        vrom_end, \
-        prom_start, \
-        prom_end = struct.unpack(">IIII", rom.read_bytes(dmadata_table_offset, 0x10))
-
-        dmadata_table_offset += 0x10
-
-        # if all zero, treat as EOF (animal forest does this)
-        if vrom_start == vrom_end == prom_start == prom_end == 0:
-            break
-        
-        if vrom_sizeof > vrom_end:
-            raise RuntimeError("vrom entries appear to be out of order... report bug")
-
-        table_entries.append( (vrom_start, vrom_end, prom_start, prom_end) )
-    
-    return table_entries
-
-# the zelda framework has a "virtual ROM" setup where data can be addressed
-# within compressed blobs or at arbitrary ROM addresses.
-# typically the dmatable is located right after the bootexe.
-def _zelda_inflate_virtual_rom(rom: N64Rom,
-                               dmadata_table_offset: int) -> N64Rom:
-    # tuple: address -> data
-    vrom_chunks: list[tuple[int,bytes]] = []
-
-    vrom_sizeof = 0
-
-    # first entry is the ROM header, IPL3 stub, and preamble.
-    first_16 = rom.read_bytes(dmadata_table_offset, 0x10)
-    if _zelda_framework_signature_matches(first_16) is False:
-        raise RuntimeError("zelda dma table didn't match expected format")
-
-    table_entries = _zelda_parse_dma_table(rom, dmadata_table_offset)
-    vrom_sizeof = table_entries[-1][1]
-    logger.info("vrom size is %d (0x%08x) byte(s)",
-                vrom_sizeof,
-                vrom_sizeof)
-
-    for vrom_start, vrom_end, prom_start, prom_end in table_entries:
-        # if prom_end == 0, file's uncompressed, else it's Yaz0 compressed
-        if prom_start == prom_end == 0xFFFFFFFF:
-            # majora's mask: prom_start/prom_end being -1 means file is unwired.
-            # fill that region with zeroes instead
-            if SPAM:
-                logger.info("VROM 0x%08x-0x%08x: file entry is unwired", vrom_start, vrom_end)
-
-            sizeof = vrom_end - vrom_start
-            vrom_chunks.append( (vrom_start, bytes([0] * sizeof)) )
-
-        if prom_end == 0:
-            sizeof = vrom_end - vrom_start
-            data = rom.read_bytes(prom_start, sizeof)
-
-            if SPAM:
-                logger.info("VROM 0x%08x-0x%08x = uncompressed 0x%08x-0x%08x",
-                            vrom_start,
-                            vrom_end,
-                            prom_start,
-                            prom_start + sizeof)
-            
-            vrom_chunks.append( (vrom_start, data) )
-
-        else:
-            sizeof = prom_end - prom_start
-            data = rom.read_bytes(prom_start, sizeof)
-            
-            # should be Yaz0 (iQue games use zlib, but I am not supporting them)
-            data = yaz0_decompress(data)
-
-            if data is None:
-                raise RuntimeError("compressed chunk in vrom was NOT Yaz0")
-
-            if SPAM:
-                logger.info("VROM 0x%08x-0x%08x = Yaz0 at 0x%08x-0x%08x",
-                            vrom_start,
-                            vrom_end,
-                            prom_start,
-                            prom_end)
-
-            vrom_chunks.append( (vrom_start, data) )
-
-    # now build the VROM
-    vrom_data = bytearray([0] * vrom_sizeof)
-    for vrom_address, data in vrom_chunks:
-        vrom_data[vrom_address:vrom_address+len(data)] = data
-
-    # what we should do here is patch the table now that all resources are
-    # uncompressed, but that won't do much because the games might hardcode
-    # addresses to random resources including the main game code.
-    # so let's just return the virtual ROM
-
-    return N64Rom(vrom_data, ROMENDIANNESS_BIG)
-
-def _zelda_lookup_binary_id_by_virtual_address(address: int,
-                                               all_binaries: list[tuple[int,int,RelocatableBinary]]) -> int | None:
-    for i, tup in enumerate(all_binaries):
-        vram_start, vram_end, _ = tup
-
-        # has to be inclusive as one actor in dobutsu has a reloc pointing to the end of its VRAM space
-        if vram_start <= address <= vram_end:
-            return i
-    return None
 
 def _zelda_parse_relocations(binary: RelocatableBinary,
                              binary_vram_start: int,
@@ -364,7 +230,9 @@ def _zelda_parse_relocations(binary: RelocatableBinary,
 
                 target_offset = target_absolute_offset - target_section_base
 
-                logger.warning("hi16/lo16: reference to absolute offset 0x%08x, which is out of bounds. reloc will point to %s%#+6x.",
+                logger.warning("hi16/lo16, %s%#+6x reference to absolute offset 0x%08x, which is out of bounds. reloc will point to %s%#+6x.",
+                               reloc_section.printable(),
+                               reloc_offset,
                                target_absolute_offset,
                                target_section.printable(),
                                target_offset)
@@ -580,13 +448,12 @@ def _dobutsu_consume_actor_dll_entry(data: bytes) -> tuple[ZeldaDllEntry, int]:
     
     return entry, 4*8
 
-
 def dobutsu_unpack(rom: N64Rom, ipc: int):
     preamble = identify_preamble(rom.boot_exe(), ipc)
     if preamble is None:
         return None
     
-    if _zelda_framework_is_used(rom, ipc, preamble) is False:
+    if zeldavrom_dmatable_present(rom, ipc, preamble) is False:
         return None
 
     logger.info("zelda dma table found!")
@@ -659,7 +526,7 @@ def dobutsu_unpack(rom: N64Rom, ipc: int):
 
 
     logger.info("inflating virtual ROM...")
-    virtual_rom = _zelda_inflate_virtual_rom(rom, rom_dma_table_start)
+    virtual_rom = zeldavrom_inflate_virtual_rom(rom, rom_dma_table_start)
 
     gamestate_dll_entries = _zelda_decode_dll_entries_generic(payload[(gamestate_dll_table_base - mainseg_load_address):], _dobutsu_consume_gamestate_dll_entry)
     actor_dll_entries = _zelda_decode_dll_entries_generic(payload[(actor_dll_table_base - mainseg_load_address):], _dobutsu_consume_actor_dll_entry)
@@ -696,16 +563,117 @@ def dobutsu_unpack(rom: N64Rom, ipc: int):
                     modules[i][0])
         relocs = _zelda_parse_relocations(module, module_vram_start, module_relocs[i])
 
-        # relocate this module to 0x10000000
-        relocs_applied = apply_relocations(0x10000000,
+        relocs_applied = apply_relocations(0,
                                            module,
                                            relocs,
-                                           destroying_offsets_in_binary=True)
+                                           ignoring_offsets_in_binary=True)
 
 
         # TODO: define relocs/modules in the BFFI format
-        builder.seg(0x10000000,
+        builder.seg(0,
                     module.contents(),
                     i)
+
+    return builder.build()
+
+
+# ------------------------------------------------
+#
+# Zelda - Ocarina of Time
+#
+# The main code segment is compressed within the virtual ROM segment, so
+# the full virtual ROM must be inflated first.
+#
+# ------------------------------------------------
+
+ZELDA_OOT_MAIN_SEGMENT_RUNNER_PATTERN = SignatureBuilder() \
+    .pattern([
+        0x3c, 0x07, 0x00, WILDCARD,         # +0x00 lui        a3,0xa8 <-- VROM start
+        0x3c, 0x0e, 0x00, WILDCARD,         # +0x04 lui        t6,0xb9 <-- VROM end
+        0x24, 0xe5, WILDCARD, WILDCARD,     # +0x08 addiu      a1,a3,0x7000
+        0x25, 0xce, WILDCARD, WILDCARD,     # +0x0C addiu      t6,t6,-0x52d0
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x10 lui        a0,0x8001 <-- load address
+        0xaf, 0xa2, 0x00, 0x18,             # +0x14 sw         v0,0x18(sp)
+        0xaf, 0xa3, 0x00, 0x1c,             # +0x18 sw         v1,0x1c(sp)
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x1C addiu      a0,a0,0x10a0
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x20 jal        FUN_80000df0   
+        0x01, 0xc5, 0x30, 0x23,             # +0x24 _subu      a2,t6,a1
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x28 jal        FUN_800048c0
+        0x00, 0x00, 0x00, 0x00,             # +0x2C _nop
+        0x8f, 0xb8, 0x00, 0x18,             # +0x30 lw         t8,0x18(sp)
+        0x8f, 0xb9, 0x00, 0x1c,             # +0x34 lw         t9,0x1c(sp)
+        0x3c, 0x04, 0x80, WILDCARD,         # +0x38 lui        a0,0x8011 <-- main segment BSS start
+        0x3c, 0x0f, 0x80, WILDCARD,         # +0x3C lui        t7,0x8013 <-- main segment BSS end
+        0x03, 0x02, 0x40, 0x23,             # +0x40 subu       t0,t8,v0
+        0x03, 0x23, 0x08, 0x2b,             # +0x44 sltu       at,t9,v1
+        0x01, 0x01, 0x40, 0x23,             # +0x48 subu       t0,t0,at
+        0x24, 0x84, WILDCARD, WILDCARD,     # +0x4C addiu      a0,a0,0x4dd0
+        0x25, 0xef, WILDCARD, WILDCARD,     # +0x50 addiu      t7,t7,-0x41d0
+        0x03, 0x23, 0x48, 0x23,             # +0x54 subu       t1,t9,v1
+        0xaf, 0xa9, 0x00, 0x1c,             # +0x58 sw         t1,0x1c(sp)
+        0xaf, 0xa8, 0x00, 0x18,             # +0x5C sw         t0,0x18(sp)
+        0x0c, WILDCARD, WILDCARD, WILDCARD, # +0x60 jal        bzero         
+        0x01, 0xe4, 0x28, 0x23,             # +0x64 _subu      a1,t7,a0
+    ]) \
+    .const_op32_hi16("vrom_start", 0x00) \
+    .const_op32_lo16("vrom_start", 0x08) \
+    .const_op32_hi16("vrom_end", 0x04) \
+    .const_op32_lo16("vrom_end", 0x0C) \
+    .const_op32_hi16("load_address", 0x10) \
+    .const_op32_lo16("load_address", 0x1C) \
+    .const_op32_hi16("bss_start", 0x38) \
+    .const_op32_lo16("bss_start", 0x4C) \
+    .const_op32_hi16("bss_end", 0x3C) \
+    .const_op32_lo16("bss_end", 0x50) \
+    .build()
+
+def zeldaoot_unpack(rom: N64Rom, ipc: int):
+    preamble = identify_preamble(rom.boot_exe(), ipc)
+    if preamble is None:
+        return None
+    
+    if zeldavrom_dmatable_present(rom, ipc, preamble) is False:
+        return None
+
+    logger.info("zelda dma table found!")
+
+    builder = BffiBuilder()
+    earliest_bss, _ = preamble_extract_bss_sections_to_bffi(preamble, builder)
+
+    bootexe = rom.boot_exe()[:earliest_bss-ipc]
+
+    builder.fix(ipc, bootexe)
+    builder.initial_program_counter(preamble.crt_entry_point())
+    builder.initial_stack_pointer(preamble.initial_stack_pointer())
+
+    main_segment_runner_offset = ZELDA_OOT_MAIN_SEGMENT_RUNNER_PATTERN.find(bootexe)
+    if main_segment_runner_offset is None:
+        return None
+
+    logger.info("found Zelda OoT main segment runner at 0x%08x",
+                ipc+main_segment_runner_offset)
+
+
+    consts = ZELDA_OOT_MAIN_SEGMENT_RUNNER_PATTERN.consts(ipc, bootexe, main_segment_runner_offset)
+    vrom_start = consts["vrom_start"].get_value()
+    vrom_end = consts["vrom_end"].get_value()
+    load_address = consts["load_address"].get_value()
+    bss_start = consts["bss_start"].get_value()
+    bss_end = consts["bss_end"].get_value()
+
+    logger.info("main segment: VROM 0x%08x-0x%08x -> RAM 0x%08x (bss 0x%08x-0x%08x)",
+                vrom_start,
+                vrom_end,
+                load_address,
+                bss_start,
+                bss_end)
+
+    logger.info("inflating virtual ROM... (this will take a bit)")
+    virtual_rom = zeldavrom_inflate_virtual_rom(rom, (earliest_bss-ipc) + 0x1000)
+
+    main_segment = virtual_rom.read_bytes(vrom_start, vrom_end - vrom_start)
+    builder.fix(load_address, main_segment)
+
+    # TODO: all DLLs (gamestate, actors, etc.)
 
     return builder.build()

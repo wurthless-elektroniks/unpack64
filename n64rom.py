@@ -103,7 +103,7 @@ class N64Rom:
         Return SHA-256 hash of the entire ROM.
         '''
         if self._sha256 is None:
-            self._sha256 = hashlib.sha256(self._bytes).hexdigest()
+            self._sha256 = hashlib.sha256(self.read_bytes_until_end(0)).hexdigest()
         return self._sha256
     
     def crc32(self) -> int:
@@ -116,7 +116,7 @@ class N64Rom:
         if new_header is not None:
             # TODO
             pass
-        return N64RomHeader(self._bytes[0:0x40])
+        return N64RomHeader(self.read_bytes(0,0x40))
 
     def boot_exe(self, new_boot_exe: bytearray | None = None) -> bytearray:
         '''
@@ -126,7 +126,7 @@ class N64Rom:
             # TODO
             pass
 
-        return self._bytes[0x1000:0x101000]
+        return self.read_bytes(0x1000, 0x100000)
 
     def ipl3(self, new_ipl3: bytearray | None = None):
         '''
@@ -136,7 +136,7 @@ class N64Rom:
             # TODO
             pass
 
-        return self._bytes[0x40:0x1000]
+        return self.read_bytes(0x40, 0xFFC0)
 
     def read_bytes(self, offset, count) -> bytearray:
         # TODO: bounds check?

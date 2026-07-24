@@ -6,6 +6,10 @@ import logging
 from enum import Enum
 import struct
 
+from mips import INSTRUCTION_JAL_TEMPLATE, INSTRUCTION_JMP_TEMPLATE
+
+from datautil import unpack_uint32_be
+
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------------------------
@@ -106,7 +110,7 @@ class RelocatableBinary:
         return self._section_base_offsets[section]
     
     def read32(self, offset: int) -> int:
-        return struct.unpack(">I", self._contents[offset:offset+4])[0]
+        return unpack_uint32_be(self._contents[offset:offset+4])
 
     def write32(self, offset: int, data: int | bytes):
         if isinstance(data, bytes):
@@ -131,7 +135,7 @@ def _sign_extend_imm16_value(opcode: int) -> int:
 
 def _autodetect_bytes_or_int(v: bytes | int) -> int:
     if isinstance(v, bytes):
-        return struct.unpack(">I", v)[0]
+        return unpack_uint32_be(v)
     elif isinstance(v, int):
         return v
     else:
@@ -176,7 +180,8 @@ def apply_relocations(flattened_binary_load_address: int,
                       flattened_binary: RelocatableBinary,
                       relocs: list[Reloc],
                       foreign_module_section_offset_maps: dict[int,dict[RelocSection,int]] | None = None,
-                      destroying_offsets_in_binary: bool = False) -> list[tuple[Reloc,bytes]]:
+                      ignoring_offsets_in_binary: bool = False,
+                      bal_for_jal: bool = False) -> list[tuple[Reloc,bytes]]:
 
     '''
     Applies relocations to a flattened binary and returns a list of changes made.
@@ -185,9 +190,13 @@ def apply_relocations(flattened_binary_load_address: int,
     is because some loaders (the Paradigm loader in particular) have malformed relocation data that
     expects sections to be loaded in sequence, rather than in random locations.
 
-    - destroying_offsets_in_binary: If true, the relocator will assume a base target offset of zero
-      for all relocations it encounters. This means if we have an imm26 instruction like `0c003fc1`,
-      the relocator will ignore the target and pretend as if it was `0c000000`.
+    - ignoring_offsets_in_binary: If true, the relocator will ignore whatever offset is present at the
+      reloc location and assume a base target offset of zero instead. This means if we have an imm26
+      instruction like `0c003fc1`, the relocator will ignore the offset and pretend as if it was `0c000000`.
+
+    - bal_for_jal: If true, the relocator will try to rewrite imm26 instructions as relative branches,
+      so `j` becomes an unconditional branch and `jal` becomes `bal`. The imm26 relocs can then be removed
+      from the final output relocation table to save space.
     '''
 
     # these are relocs that were applied, and the original opcodes (or imm32 data)
@@ -209,7 +218,7 @@ def apply_relocations(flattened_binary_load_address: int,
             target_offset = flattened_binary.section_base_offset(target_section) + reloc.target_section_offset()
 
             if (0 <= target_offset <= flattened_binary.sizeof()) is False and \
-                destroying_offsets_in_binary is False:
+                ignoring_offsets_in_binary is False:
                 raise RuntimeError("absolute offset went outside of the flattened binary map")
 
             target_address = flattened_binary_load_address + target_offset
@@ -233,10 +242,30 @@ def apply_relocations(flattened_binary_load_address: int,
             hibits = original_instruction & 0xFC000000
             lo26   = original_instruction & 0x03FFFFFF
 
-            unpatched_offset = 0 if destroying_offsets_in_binary else (lo26 << 2)
+            if hibits not in [INSTRUCTION_JAL_TEMPLATE, INSTRUCTION_JMP_TEMPLATE]:
+                raise RuntimeError("illegal imm26 instruction")
+
+            unpatched_offset = 0 if ignoring_offsets_in_binary else (lo26 << 2)
             patched_offset = unpatched_offset + (target_address & 0x03FFFFFF)
 
-            patched_instruction = hibits | (patched_offset >> 2)
+            relative_branch_offset = ((target_address - (reloc_offset + flattened_binary_load_address)) - 8) >> 2
+        
+            if (-0x8000 < relative_branch_offset < 0x8000) and bal_for_jal:
+                base_instruction = None
+
+                if hibits == INSTRUCTION_JAL_TEMPLATE:
+                    # bgezal $zero,offset
+                    base_instruction = 0b000001_00000_10001_00000000_00000000
+                elif hibits == INSTRUCTION_JMP_TEMPLATE:
+                    # beq $zero,$zero,offset
+                    base_instruction = 0b000100_00000_00000_00000000_00000000
+                else:
+                    raise RuntimeError("shouldn't be here")
+
+                patched_instruction = base_instruction | (relative_branch_offset & 0xFFFF)
+
+            else:
+                patched_instruction = hibits | (patched_offset >> 2)
 
             logger.debug("R_MIPS_26: at 0x%06x (%s+0x%06x) change %08x to %08x",
                 reloc_offset,
@@ -249,7 +278,7 @@ def apply_relocations(flattened_binary_load_address: int,
             flattened_binary.write32(reloc_offset, patched_instruction)
             
         elif reloc_type == RelocType.R_MIPS_32:
-            patched_instruction = (0 if destroying_offsets_in_binary else original_instruction) + target_address
+            patched_instruction = (0 if ignoring_offsets_in_binary else original_instruction) + target_address
             
             logger.debug("R_MIPS_32: at 0x%06x (%s+0x%06x) change %08x to %08x",
                 reloc_offset,
@@ -276,7 +305,7 @@ def apply_relocations(flattened_binary_load_address: int,
     
         elif reloc_type == RelocType.R_MIPS_LO16:
             if last_hi16_relocation is not None:
-                offset = 0 if destroying_offsets_in_binary else demunge_mips_hilo_offset(last_hi16_instruction, original_instruction)
+                offset = 0 if ignoring_offsets_in_binary else demunge_mips_hilo_offset(last_hi16_instruction, original_instruction)
 
                 absolute_address = target_address + offset
 
@@ -285,7 +314,7 @@ def apply_relocations(flattened_binary_load_address: int,
                 patched_lo16_instruction = (original_instruction  & 0xFFFF0000) + patched_lo16_value
 
                 logger.debug("R_MIPS_HI16: at 0x%06x (%s+0x%06x) change %08x to %08x",
-                             reloc_offset,
+                             last_hi16_offset,
                              last_hi16_relocation.section().printable(),
                              last_hi16_relocation.section_offset(),
                              last_hi16_instruction,

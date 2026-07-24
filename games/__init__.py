@@ -57,7 +57,7 @@ from .tt import ts2_unpack
 from .worms import worms_unpack, worms_eu_unpack
 from .ubisoft import ray2_unpack
 from .uso import uso_unpack
-from .zelda import dobutsu_unpack
+from .zelda import dobutsu_unpack, zeldaoot_unpack
 
 # points hash -> unpacker function.
 # unpacker function accepts (rom: N64Rom, ipc: int) and returns a BFFI.
@@ -797,6 +797,9 @@ GAME_SPECIFIC_UNPACKERS = {
     # ------------------------------------------------------
     # Zelda games and other Nintendo junk using the same framework
     # ------------------------------------------------------
+
+    # Legend of Zelda, The - Ocarina of Time (U) (V1.0) [!]
+    "c916ab315fbe82a22169bff13d6b866e9fddc907461eb6b0a227b82acdf5b506": zeldaoot_unpack,
 
     # Doubutsu no Mori (J) [!]
     "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
