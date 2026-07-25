@@ -136,7 +136,7 @@ class N64Rom:
             # TODO
             pass
 
-        return self.read_bytes(0x40, 0xFFC0)
+        return self.read_bytes(0x40, 0xFC0)
 
     def read_bytes(self, offset, count) -> bytearray:
         # TODO: bounds check?
