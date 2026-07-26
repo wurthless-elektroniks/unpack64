@@ -248,7 +248,8 @@ def apply_relocations(flattened_binary_load_address: int,
             unpatched_offset = 0 if ignoring_offsets_in_binary else (lo26 << 2)
             patched_offset = unpatched_offset + (target_address & 0x03FFFFFF)
 
-            relative_branch_offset = ((target_address - (reloc_offset + flattened_binary_load_address)) - 8) >> 2
+            # should be -4, confirmed against ghidra
+            relative_branch_offset = ((target_address - (reloc_offset + flattened_binary_load_address)) - 4) >> 2
         
             if (-0x8000 < relative_branch_offset < 0x8000) and bal_for_jal:
                 base_instruction = None
@@ -265,6 +266,8 @@ def apply_relocations(flattened_binary_load_address: int,
                 patched_instruction = base_instruction | (relative_branch_offset & 0xFFFF)
 
             else:
+                if bal_for_jal:
+                    logger.debug("bal_for_jal: target offset out of bounds, will write an imm26 instruction instead")
                 patched_instruction = hibits | (patched_offset >> 2)
 
             logger.debug("R_MIPS_26: at 0x%06x (%s+0x%06x) change %08x to %08x",
