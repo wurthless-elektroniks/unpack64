@@ -801,6 +801,17 @@ GAME_SPECIFIC_UNPACKERS = {
     # Legend of Zelda, The - Ocarina of Time (U) (V1.0) [!]
     "c916ab315fbe82a22169bff13d6b866e9fddc907461eb6b0a227b82acdf5b506": zeldaoot_unpack,
 
+    # Legend of Zelda, The - Ocarina of Time (U) (V1.1) [!]
+    "fb87a0dac188f9292c679da7ac6f772acebe6f68e27293cfc281fc8636008db0": zeldaoot_unpack,
+
+    # Legend of Zelda, The - Ocarina of Time (U) (V1.2) [!]
+    "49acd3885f13b0730119b78fb970911cc8aba614fe383368015c21565983368d": zeldaoot_unpack,
+
+    # Zelda no Densetsu - Toki no Ocarina (J) (V1.0) [!]
+    "d38fd6ff19daf05320b3c23f9adc119b017408686e12aaf32f313a7582b020af": zeldaoot_unpack,
+
+    # TODO: euro versions, including the gc roms. signatures don't match yet
+
     # Doubutsu no Mori (J) [!]
     "d9417be056534fcc0bdff2e6cd5f1135511be7c0a4dace04a96a2649596ce908": dobutsu_unpack,
 
