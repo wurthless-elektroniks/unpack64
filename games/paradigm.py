@@ -61,9 +61,11 @@ from enum import Enum
 from compression.mio0 import mio0_decompress
 
 from bffi import BffiBuilder
+from datautil import unpack_uint32_be
 from n64rom import N64Rom
 from preamble import identify_preamble, preamble_extract_bss_sections_to_bffi
-from reloc import demunge_mips_hilo_offset
+from reloc import demunge_mips_hilo_offset, apply_relocations, \
+      RelocatableBinary, RelocSection, RelocType, Reloc
 from signature import SignatureBuilder, WILDCARD
 from sigutil import pick_pattern
 
@@ -75,6 +77,13 @@ class PdmexeSectionType(Enum):
     RODATA = 1
     DATA   = 2
     BSS    = 3
+
+PDMEXE_SECTION_TO_STD_SECTION = {
+    PdmexeSectionType.TEXT: RelocSection.TEXT,
+    PdmexeSectionType.RODATA: RelocSection.RODATA,
+    PdmexeSectionType.DATA: RelocSection.DATA,
+    PdmexeSectionType.BSS: RelocSection.BSS,
+}
 
 class PdmexeFileSectionType(Enum):
     CODE = 0x434F4445
@@ -90,6 +99,14 @@ class PdmexeRelocType(Enum):
     IMM32   = 5
     IMM32_B = 6
 
+PDMEXE_RELOCTYPE_TO_STD_RELOCTYPE = {
+    PdmexeRelocType.HI16: RelocType.R_MIPS_HI16,
+    PdmexeRelocType.LO16: RelocType.R_MIPS_LO16,
+    PdmexeRelocType.IMM26: RelocType.R_MIPS_26,
+    PdmexeRelocType.IMM32: RelocType.R_MIPS_32,
+    PdmexeRelocType.IMM32_B: RelocType.R_MIPS_32,
+}
+
 BASE_SECTION_LUT = [
     PdmexeSectionType.TEXT,
     PdmexeSectionType.DATA,
@@ -98,8 +115,8 @@ BASE_SECTION_LUT = [
 
 TARGET_SECTION_LUT = [
     PdmexeSectionType.TEXT,
-    PdmexeSectionType.RODATA,
     PdmexeSectionType.DATA,
+    PdmexeSectionType.RODATA,
     PdmexeSectionType.BSS
 ]
 
@@ -130,7 +147,10 @@ class Pdmexe:
         self._module_id       = None
         self._module_filename = None
         self._entry_point     = None
-        self._sections : dict[PdmexeSectionType, bytes] = {}
+
+        self._section_ranges : dict[RelocSection, tuple[int,int]] = {}
+        self._flattened_contents: bytearray = None
+
         self._relocs: list[PdmexeReloc] = []
 
     def module_id(self) -> int:
@@ -142,97 +162,31 @@ class Pdmexe:
     def entry_point(self) -> int:
         return self._entry_point
 
-    def section_size(self, section_type: PdmexeSectionType) -> int:
-        return 0 if section_type not in self._sections else len(self._sections[section_type])
+    def section_size(self, section_type: RelocSection) -> int:
+        return 0 if section_type not in self._section_ranges else \
+                self._section_ranges[section_type][1] - self._section_ranges[section_type][0]
 
-    def section(self, section_type: PdmexeSectionType) -> bytes:
-        return None if section_type not in self._sections else self._sections[section_type]
+    def section(self, section_type: RelocSection) -> bytes:
+        return None if section_type not in self._section_ranges else \
+            self._flattened_contents[self._section_ranges[section_type][0]:self._section_ranges[section_type][1]]
+
+    def flattened_contents(self):
+        return self._flattened_contents
 
     def relocs(self):
         return self._relocs
 
-def _calc_base_address(section: PdmexeSectionType,
-                       offset_in_section: int,
-                       text_size: int,
-                       rodata_size: int,
-                       data_size: int,
-                       allow_bss: bool):
-    
-    if section == PdmexeSectionType.TEXT:
-        return offset_in_section
-    elif section == PdmexeSectionType.RODATA:
-        return offset_in_section + text_size
-    elif section == PdmexeSectionType.DATA:
-        return offset_in_section + text_size + rodata_size
-    elif section == PdmexeSectionType.BSS:
-        if allow_bss is False:
-            raise RuntimeError("attempt to use BSS for a base address when not allowed to")
-        return offset_in_section + text_size + rodata_size + data_size
-
-def _relocate_and_flatten_module(module: Pdmexe,
-                                 load_address: int) -> tuple[bytes,int]:
-    flattened_code = bytearray()
-
-    text_size   = module.section_size(PdmexeSectionType.TEXT)
-    rodata_size = module.section_size(PdmexeSectionType.RODATA)
-    data_size   = module.section_size(PdmexeSectionType.DATA)
-    bss_size    = module.section_size(PdmexeSectionType.BSS)
-
-    if text_size != 0:
-        flattened_code += module.section(PdmexeSectionType.TEXT)
-
-    if rodata_size != 0:
-        flattened_code += module.section(PdmexeSectionType.RODATA)
-
-    if data_size != 0:
-        flattened_code += module.section(PdmexeSectionType.DATA)
-
-    if bss_size != 0:
-        flattened_code += bytes([0] * bss_size)
-
-    for reloc in module.relocs():
-        patch_address = _calc_base_address(reloc.reloc_section(),
-                                            reloc.reloc_offset(),
-                                            text_size,
-                                            rodata_size,
-                                            data_size,
-                                            False)
-        
-        base_dest_address = _calc_base_address(reloc.target_section(),
-                                            reloc.target_offset(),
-                                            text_size,
-                                            rodata_size,
-                                            data_size,
-                                            True)
-            
-        dest_address = load_address + base_dest_address
-        
-        reloc_type = reloc.reloc_type()
-        if reloc_type == PdmexeRelocType.HI16:
-            if dest_address & 0x8000:
-                dest_address += 0x00010000
-            flattened_code[patch_address + 2:patch_address + 4] = struct.pack(">H", (dest_address >> 16) & 0xFFFF)
-        elif reloc_type == PdmexeRelocType.LO16:
-            flattened_code[patch_address + 2:patch_address + 4] = struct.pack(">H", dest_address & 0xFFFF)
-        elif reloc_type == PdmexeRelocType.IMM26:
-            instruction = struct.unpack(">I", flattened_code[patch_address:patch_address + 4])[0] & 0xFC000000
-            instruction += (dest_address & 0x03FFFFFF) >> 2
-            flattened_code[patch_address:patch_address + 4] = struct.pack(">I", instruction)
-        elif reloc_type == PdmexeRelocType.IMM32:
-            flattened_code[patch_address:patch_address + 4] = struct.pack(">I", dest_address)
-        else:
-            raise RuntimeError("unrecognized reloc type!")
-
-    return flattened_code[:text_size+rodata_size+data_size], bss_size
-
 def _parse_relocs(reloc_section: bytes,
                   num_relocs: int,
-                  other_sections: dict[PdmexeSectionType,bytes]):
+                  flattened_binary: bytes,
+                  section_ranges: dict[RelocType,tuple[int,int]]) -> list[Reloc]:
     
     offset = 0
 
-    relocs = []
+    relocs: list[PdmexeReloc] = []
     last_hi16 = None
+
+    # not a one-shot loop to save time refactoring (i'm lazy)
     while offset < (num_relocs*4):
         reloc_word = struct.unpack(">I", reloc_section[offset:offset+4])[0]
 
@@ -240,8 +194,14 @@ def _parse_relocs(reloc_section: bytes,
         
         # offset of instruction to be molested
         reloc_offset         = (reloc_word & 0x003FFFFF) << 1
-        reloc_base_section   = BASE_SECTION_LUT[ (reloc_word & 0x0C000000) >> 26 ]
-        reloc_target_section = TARGET_SECTION_LUT[ (reloc_word & 0xF0000000) >> 28 ]
+        reloc_base_section   = PDMEXE_SECTION_TO_STD_SECTION[ BASE_SECTION_LUT[ (reloc_word & 0x0C000000) >> 26 ] ]
+        reloc_target_section = PDMEXE_SECTION_TO_STD_SECTION[ TARGET_SECTION_LUT[ (reloc_word & 0xF0000000) >> 28 ] ]
+
+        # beetle adventure racing: letter.o points to .rodata which doesn't exist.
+        # override with .data in that case.
+        if reloc_target_section == RelocSection.RODATA and \
+           RelocSection.RODATA not in section_ranges:
+            reloc_target_section = RelocSection.DATA
         
         reloc = PdmexeReloc()
         # pylint: disable=protected-access
@@ -250,57 +210,58 @@ def _parse_relocs(reloc_section: bytes,
         reloc._reloc_offset   = reloc_offset
         reloc._target_section = reloc_target_section
 
-        # recover offsets ahead of time
-        base_section_contents = other_sections[reloc_base_section]
+        reloc_abs_offset = section_ranges[reloc_base_section][0] + reloc_offset
 
         dest_offset = None
         if reloc_type == PdmexeRelocType.HI16:
             last_hi16 = reloc
+
         elif reloc_type == PdmexeRelocType.LO16:
             
             if last_hi16._reloc_section != reloc_base_section:
                 raise RuntimeError("hi16/lo16 assigned to different sections")
 
-            # FIXME: some modules trip this check
-            # - beetle racing: caranim.o
-            # - f1 world grandprix 2: f1paddock_rom.o
-            if last_hi16._target_section != reloc_target_section:
-                logger.error("hi16/lo16 point to different target sections, abandoning load. hi16 %s/lo16 %s",
-                             last_hi16._target_section,
-                             reloc_target_section)
-                return None
+            hi16_offset = section_ranges[last_hi16.reloc_section()][0] + last_hi16._reloc_offset
+            lo16_offset = section_ranges[reloc_base_section][0]        + reloc_offset
 
-            hi16_offset = last_hi16._reloc_offset
-            lo16_offset = reloc_offset
-
-            dest_offset = demunge_mips_hilo_offset(base_section_contents[hi16_offset:hi16_offset+4],
-                                                base_section_contents[lo16_offset:lo16_offset+4])
-        
-
-            if dest_offset > len(other_sections[reloc_target_section]):
-                raise RuntimeError("hi16/lo16 pointed out of bounds")
+            dest_offset = demunge_mips_hilo_offset(flattened_binary[hi16_offset:hi16_offset+4],
+                                                   flattened_binary[lo16_offset:lo16_offset+4])
 
             if last_hi16._target_offset is None:
                 last_hi16._target_offset = dest_offset
 
             reloc._target_offset = dest_offset
+
         elif reloc_type == PdmexeRelocType.IMM26:
-            dest_offset = (struct.unpack(">I", base_section_contents[reloc_offset:reloc_offset+4])[0] & 0x03FFFFFF) << 2
+            dest_offset = (unpack_uint32_be(flattened_binary[reloc_abs_offset:reloc_abs_offset+4]) & 0x03FFFFFF) << 2
             reloc._target_offset = dest_offset
 
         elif reloc_type == PdmexeRelocType.IMM32:
-            dest_offset = struct.unpack(">I", base_section_contents[reloc_offset:reloc_offset+4])[0]
+            dest_offset = unpack_uint32_be(flattened_binary[reloc_abs_offset:reloc_abs_offset+4])
             reloc._target_offset = dest_offset
         else:
             raise RuntimeError("unexpected reloc type")
 
-        if dest_offset is not None and dest_offset > len(other_sections[reloc_target_section]):
-            raise RuntimeError("relocation pointed out of bounds")
-
         relocs.append(reloc)
         offset += 4
 
-    return relocs
+    # convert the paradigm relocs to the standard format
+    # (again, too lazy to do much to the above code)
+    std_relocs: list[Reloc] = []
+    last_hi16     = None
+
+    for reloc in relocs:
+        std_reloc_type = PDMEXE_RELOCTYPE_TO_STD_RELOCTYPE[reloc.reloc_type()]
+
+        std_reloc = Reloc(std_reloc_type,
+                          reloc.reloc_section(),
+                          reloc.reloc_offset(),
+                          reloc.target_section(),
+                          reloc.target_offset())
+        
+        std_relocs.append(std_reloc)
+
+    return std_relocs
 
 def _read_module(module_contents: bytes) -> Pdmexe:
     offset = 0
@@ -359,26 +320,23 @@ def _read_module(module_contents: bytes) -> Pdmexe:
 
     if PdmexeFileSectionType.CODE not in file_sections:
         raise RuntimeError("overlay module has no code section!")
-    
-    # the CODE section is text/rodata/data all in one (with bss following them
-    # when loaded in RAM), so split them up
-    split_offset = 0
-    flattened_code_section = file_sections[PdmexeFileSectionType.CODE]
 
-    sections: dict[PdmexeSectionType,bytes] = {}
+    # full module is flattened to text/rodata/data/bss, in that order, when loaded
+    flattened_code_section = file_sections[PdmexeFileSectionType.CODE] + bytes([0] * bss_size)
+
+    section_ranges = {}
+    offs = 0
     for section_type, section_size in [
-        (PdmexeSectionType.TEXT, text_size),
-        (PdmexeSectionType.RODATA, rodata_size),
-        (PdmexeSectionType.DATA, data_size)
-    ]:
+        (RelocSection.TEXT, text_size),
+        (RelocSection.RODATA, rodata_size),
+        (RelocSection.DATA, data_size),
+        (RelocSection.BSS, bss_size)
+        ]:
         if section_size == 0:
             continue
-        sections[section_type] = flattened_code_section[split_offset:split_offset+section_size]
-        
-        split_offset += section_size
 
-    if bss_size != 0:
-        sections[PdmexeSectionType.BSS] = bytes([0] * bss_size)
+        section_ranges[section_type] = (offs, offs + section_size)
+        offs += section_size
 
     # load relocations if there are any
     relocs = []
@@ -387,17 +345,20 @@ def _read_module(module_contents: bytes) -> Pdmexe:
             raise RuntimeError("overlay module needs relocations, but no relocation section was loaded!")
         relocs = _parse_relocs(file_sections[PdmexeFileSectionType.RELA],
                                num_relocs,
-                               sections)
-        
+                               flattened_code_section,
+                               section_ranges)
+
+        # TODO: odd behavior - find games that will follow this code path
         if relocs is None:
             return None
-        
+
     exe = Pdmexe()
-    exe._module_id = module_id
-    exe._entry_point = entry_point
-    exe._module_filename = module_filename
-    exe._sections = sections
-    exe._relocs = relocs
+    exe._module_id          = module_id
+    exe._entry_point        = entry_point
+    exe._module_filename    = module_filename
+    exe._flattened_contents = flattened_code_section
+    exe._section_ranges     = section_ranges
+    exe._relocs             = relocs
 
     return exe
     
@@ -597,18 +558,25 @@ def beetle_unpack(rom: N64Rom, ipc: int):
                     module_id,
                     module.module_filename(),
                     load_address)
+
+        # TODO: remove all these hacks...
+        section_range_tuple_list = []
+        for k, v in module._section_ranges.items():
+            section_range_tuple_list.append( (v[0],v[1],k) )
+
+        relocatable_binary = RelocatableBinary(module.flattened_contents(), section_range_tuple_list)
+
+        apply_relocations(load_address,
+                          relocatable_binary,
+                          module.relocs(),
+                          ignoring_offsets_in_binary=True, # because the relocs already have offsets
+                          bal_for_jal=True)
+
+        relocated_binary = relocatable_binary.contents()
         
-        code, bss_size = _relocate_and_flatten_module(module, load_address)
-        code_size = len(code)
-        code_and_bss_size = code_size + bss_size
-        logger.info("\tcode:  0x%08x-0x%08x", load_address, load_address + code_size)
-        logger.info("\tbss:   0x%08x-0x%08x", load_address + code_size, load_address + code_and_bss_size)
-        logger.info("\tentry: 0x%08x", load_address + module.entry_point())
+        builder.fix(load_address, relocatable_binary.contents())
 
-        builder.fix(load_address, code)
-        builder.bss(load_address + code_size, bss_size)
-
-        load_address += code_and_bss_size
+        load_address += len(relocated_binary)
 
     if load_address >= 0x80400000:
         logger.warning("total loaded boot code went outside of 4 MB RDRAM space!")
@@ -624,11 +592,23 @@ def beetle_unpack(rom: N64Rom, ipc: int):
         logger.info("relocating dynload module 0x%08x (%s) to 0x00000000",
                     module_id,
                     module.module_filename())
-        
-        code, bss_size = _relocate_and_flatten_module(module, 0x00000000)
-        code = code + bytes([0] * bss_size)
 
-        builder.seg(0, code)
+        # TODO: remove all these hacks...
+        section_range_tuple_list = []
+        for k, v in module._section_ranges.items():
+            section_range_tuple_list.append( (v[0],v[1],k) )
+
+        relocatable_binary = RelocatableBinary(module.flattened_contents(), section_range_tuple_list)
+
+        apply_relocations(0,
+                          relocatable_binary,
+                          module.relocs(),
+                          ignoring_offsets_in_binary=True, # because the relocs already have offsets
+                          bal_for_jal=True)
+
+        relocated_binary = relocatable_binary.contents()
+        
+        builder.seg(0, relocatable_binary.contents())
 
     return builder.build()
 

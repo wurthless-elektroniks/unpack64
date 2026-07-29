@@ -561,20 +561,16 @@ GAME_SPECIFIC_UNPACKERS = {
     "b64f5b9a3c4afc1907aa71f81edd7df91222a961bd346e0ef57bba6d25900fb4": beetle_unpack,
 
     # Beetle Adventure Racing! (U) (M3) [!]
-    # FIXME: one module fails to load
     "6addd60de277c83351eff83099e4dab25ac45279b6401728cfda9eea2f1380df": beetle_unpack,
 
     # Beetle Adventure Racing! (E) (M3) [!]
-    # FIXME: one module fails to load
     "ef0c7bfa39712b841cc0d5b87ab6f8faf15a6877e587168a48ddff0c9c3bef87": beetle_unpack,
 
     # HSV Adventure Racing (A)
-    # FIXME: one module fails to load
     "c1ab44c36d2442d8f3e2123bd976a2c2768a0940ebe4ac14408db924241e5a6d": beetle_unpack,
 
     # F-1 World Grand Prix II (E) (M4) [!]
-    # FIXME: one module referenced by the boot segment doesn't load and the unpack fails
-    # "84ad927e250a746b24ab6a9c35264a008d7c27c216da37e5ec1dd46c4c5f699f": beetle_unpack,
+    "84ad927e250a746b24ab6a9c35264a008d7c27c216da37e5ec1dd46c4c5f699f": beetle_unpack,
 
     # Duck Dodgers Starring Daffy Duck (U) (M3) [!]
     "2bbfe0cfc6aff7b623ae53673b8f91e9008cc5749fe07920712e0d0f9abe3fc5": beetle_unpack,

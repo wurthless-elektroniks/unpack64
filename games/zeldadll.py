@@ -130,6 +130,8 @@ def zeldadll_parse_relocations(binary: RelocatableBinary,
     hi16s: dict[int,ZeldaHi16] = {}
     relocs = []
 
+    last_hi16_register = None
+
     for reloc_word in reloc_words:
         reloc_section_raw = reloc_word >> 30
         if reloc_section_raw == 0:
@@ -207,14 +209,18 @@ def zeldadll_parse_relocations(binary: RelocatableBinary,
                                target_section.printable(),
                                target_offset)
 
-            if hi16.applied() is False:
+            # write hi16 entry if the offset register changed from the last hi16 reloc,
+            # or if it hasn't been applied yet
+            if offset_register != last_hi16_register or not hi16.applied():
                 relocs.append(Reloc(RelocType.R_MIPS_HI16,
-                                    hi16.section(),
-                                    hi16.offset(),
-                                    target_section,
-                                    target_offset))
-                hi16.applied(True)
+                                hi16.section(),
+                                hi16.offset(),
+                                target_section,
+                                target_offset))
 
+                last_hi16_register = offset_register
+                hi16.applied(True)
+                    
             relocs.append(Reloc(RelocType.R_MIPS_LO16,
                 reloc_section,
                 reloc_offset,

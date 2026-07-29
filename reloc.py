@@ -28,6 +28,8 @@ class RelocSection(Enum):
     DATA   = 2
     BSS    = 3
 
+    FLAT   = 9
+
     def printable(self):
         return f".{self.name.lower()}"
 
@@ -134,12 +136,12 @@ def _sign_extend_imm16_value(opcode: int) -> int:
     return struct.unpack(">hh", struct.pack(">I", opcode))[1]
 
 def _autodetect_bytes_or_int(v: bytes | int) -> int:
-    if isinstance(v, bytes):
+    if isinstance(v, bytes) or isinstance(v, bytearray):
         return unpack_uint32_be(v)
     elif isinstance(v, int):
         return v
     else:
-        raise RuntimeError("type of v not bytes or int")
+        raise RuntimeError(f"type of v not bytes or int (got: {type(v)})")
 
 def demunge_mips_hilo_offset(hi16_op: bytes | int, lo16_op: bytes | int) -> int:
     '''
@@ -181,7 +183,7 @@ def apply_relocations(flattened_binary_load_address: int,
                       relocs: list[Reloc],
                       foreign_module_section_offset_maps: dict[int,dict[RelocSection,int]] | None = None,
                       ignoring_offsets_in_binary: bool = False,
-                      bal_for_jal: bool = False) -> list[tuple[Reloc,bytes]]:
+                      bal_for_jal: bool = False) -> list[tuple[Reloc,int,int]]:
 
     '''
     Applies relocations to a flattened binary and returns a list of changes made.
@@ -189,6 +191,10 @@ def apply_relocations(flattened_binary_load_address: int,
     The reason we must use a flattened binary, instead of random sections at random load addresses,
     is because some loaders (the Paradigm loader in particular) have malformed relocation data that
     expects sections to be loaded in sequence, rather than in random locations.
+
+    VERY IMPORTANT NOTE! This relocation routine uses simple hi16 latching as opposed to the register-by-register
+    approach seen in the Zelda dynamic loader. The caller MUST ensure that hi16/lo16 pairings are listed in the
+    correct order or you will get invalid results!
 
     - ignoring_offsets_in_binary: If true, the relocator will ignore whatever offset is present at the
       reloc location and assume a base target offset of zero instead. This means if we have an imm26
@@ -215,6 +221,10 @@ def apply_relocations(flattened_binary_load_address: int,
         if reloc.target_module_id() == -1:
             # target is a local
             target_section = reloc.target_section()
+
+            if flattened_binary.section_base_offset(target_section) is None:
+                raise RuntimeError(f"reloc pointed to target section {target_section.printable()}, which doesn't exist!")
+
             target_offset = flattened_binary.section_base_offset(target_section) + reloc.target_section_offset()
 
             if (0 <= target_offset <= flattened_binary.sizeof()) is False and \
@@ -277,20 +287,22 @@ def apply_relocations(flattened_binary_load_address: int,
                 original_instruction,
                 patched_instruction)
             
-            relocs_applied.append( (reloc, original_instruction) )     
+            relocs_applied.append( (reloc, original_instruction, patched_instruction) )     
             flattened_binary.write32(reloc_offset, patched_instruction)
             
         elif reloc_type == RelocType.R_MIPS_32:
             patched_instruction = (0 if ignoring_offsets_in_binary else original_instruction) + target_address
             
-            logger.debug("R_MIPS_32: at 0x%06x (%s+0x%06x) change %08x to %08x",
+            logger.debug("R_MIPS_32: at 0x%06x (%s+0x%06x) change %08x to %08x (%s%+#09x)",
                 reloc_offset,
                 reloc.section().printable(),
                 reloc.section_offset(),
                 original_instruction,
-                patched_instruction)
-
-            relocs_applied.append( (reloc, original_instruction) )     
+                patched_instruction,
+                reloc.target_section().printable(),
+                reloc.target_section_offset())
+            
+            relocs_applied.append( (reloc, original_instruction, patched_instruction) )
             flattened_binary.write32(reloc_offset, patched_instruction)
         
         elif reloc_type == RelocType.R_MIPS_HI16:
@@ -323,20 +335,22 @@ def apply_relocations(flattened_binary_load_address: int,
                              last_hi16_instruction,
                              patched_hi16_instruction)
                 
-                relocs_applied.append( (last_hi16_relocation, last_hi16_instruction) )     
+                relocs_applied.append( (last_hi16_relocation, last_hi16_instruction, patched_hi16_instruction) )
                 flattened_binary.write32(last_hi16_offset, patched_hi16_instruction)
 
-                logger.debug("R_MIPS_LO16: at 0x%06x (%s+0x%06x) change %08x to %08x",
+                logger.debug("R_MIPS_LO16: at 0x%06x (%s+0x%06x) change %08x to %08x (%s%+#09x)",
                              reloc_offset,
                              reloc.section().printable(),
                              reloc.section_offset(),
                              original_instruction,
-                             patched_lo16_instruction)
+                             patched_lo16_instruction,
+                             reloc.target_section().printable(),
+                             reloc.target_section_offset())
                 
-                relocs_applied.append( (reloc, original_instruction) )     
+                relocs_applied.append( (reloc, original_instruction, patched_lo16_instruction) )     
                 flattened_binary.write32(reloc_offset, patched_lo16_instruction)
 
-                last_hi16_relocation = None
+                # last_hi16_relocation = None
             else:
                 # TODO: find modules that try to do this out of all games using dyanimc loaders
                 # and confirm that this should never happen
@@ -346,3 +360,20 @@ def apply_relocations(flattened_binary_load_address: int,
             raise RuntimeError("illegal relocation type")
         
     return relocs_applied
+
+def strip_bal_for_jal_substitutions(changes_made: list[tuple[Reloc,int,int]]) -> list[tuple[Reloc,int,int]]:
+    '''
+    Removes bal-for-jal substitutions from the changes-made list returned by apply_relocations().
+
+    apply_relocations() does not do this on its own, because there's a chance an unresolved import has happened
+    and the relocation couldn't be applied.
+    '''
+    filtered = []
+
+    for reloc, instruction_before, instruction_after in changes_made:
+        if reloc.type() != RelocType.R_MIPS_26 or \
+            (instruction_before & 0xFC000000) == (instruction_after & 0xFC000000):
+            filtered.append( (reloc, instruction_before, instruction_after) )
+            continue
+
+    return filtered
