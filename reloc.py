@@ -178,6 +178,21 @@ def munge_mips_hilo_offset(offset: int) -> tuple[int,int]:
 
 # ------------------------------------------------------------------------------------
 
+def _log_reloc_application(reloc: Reloc,
+                           reloc_offset,
+                           original_instruction,
+                           patched_instruction):
+    logger.debug("%s: at 0x%06x (%s+0x%06x) change %08x to %08x (%s:%s%+#09x)",
+        reloc.type().name,
+        reloc_offset,
+        reloc.section().printable(),
+        reloc.section_offset(),
+        original_instruction,
+        patched_instruction,
+        "local" if reloc.target_module_id() == -1 else f"mod-{reloc.target_module_id():04x}",
+        reloc.target_section().printable(),
+        reloc.target_section_offset())
+
 def apply_relocations(flattened_binary_load_address: int,
                       flattened_binary: RelocatableBinary,
                       relocs: list[Reloc],
@@ -196,6 +211,16 @@ def apply_relocations(flattened_binary_load_address: int,
     approach seen in the Zelda dynamic loader. The caller MUST ensure that hi16/lo16 pairings are listed in the
     correct order or you will get invalid results!
 
+    Parameters:
+
+    - foreign_module_section_offset_maps: Dict pointing module_id -> {reloc_section, load_address}
+      so we know where foreign module sections (which we import from) are supposed to be loaded.
+      Default is None (no imports).
+      
+      The relocator will assume that a foreign module is a load-later if one of its sections loads
+      to 0x00000000. Otherwise, it assumes that module is to be loaded alongside this one and will
+      try to statically link against it.
+
     - ignoring_offsets_in_binary: If true, the relocator will ignore whatever offset is present at the
       reloc location and assume a base target offset of zero instead. This means if we have an imm26
       instruction like `0c003fc1`, the relocator will ignore the offset and pretend as if it was `0c000000`.
@@ -203,10 +228,12 @@ def apply_relocations(flattened_binary_load_address: int,
     - bal_for_jal: If true, the relocator will try to rewrite imm26 instructions as relative branches,
       so `j` becomes an unconditional branch and `jal` becomes `bal`. The imm26 relocs can then be removed
       from the final output relocation table to save space.
+
+    Returns a list of changes made as tuples (reloc, original_instruction, patched_instruction).
     '''
 
     # these are relocs that were applied, and the original opcodes (or imm32 data)
-    relocs_applied: list[tuple[Reloc,int]] = []
+    relocs_applied: list[tuple[Reloc, int, int]] = []
 
     last_hi16_offset      = None
     last_hi16_relocation  = None
@@ -217,6 +244,8 @@ def apply_relocations(flattened_binary_load_address: int,
         
         reloc_offset = flattened_binary.section_base_offset(reloc.section()) + reloc.section_offset()
         original_instruction = flattened_binary.read32(reloc_offset)
+
+        target_is_global = False
         
         if reloc.target_module_id() == -1:
             # target is a local
@@ -234,16 +263,27 @@ def apply_relocations(flattened_binary_load_address: int,
             target_address = flattened_binary_load_address + target_offset
 
         else:
-            # target is a global
-            
-            # the 1080 USO loader is the only DLL scheme I know about, and it's a lazy load,
-            # so we don't necessarily need to resolve imports right away
+            # while the 1080 uso loader can lazy-load modules and apply relocations later,
+            # we still need to have all of the modules loaded in memory here
             if foreign_module_section_offset_maps is None or \
                reloc.target_module_id() not in foreign_module_section_offset_maps:
-                logger.warning("not relocating %s:%s+0x%08x: foreign module id %d not loaded")
-                continue
+                raise RuntimeError(f"foreign module {reloc.target_module_id():04x} not loaded!")
 
-            raise RuntimeError("global importing currently unimplemented")
+            foreign_section_offset_map = foreign_module_section_offset_maps[reloc.target_module_id()]
+
+            # if the other module loads to 0x00000000, then that's a sign
+            # that the target is to be loaded later.
+            # otherwise, the target module is assumed to be loaded alongside this one,
+            # so we can branch into it
+            if 0x00000000 in foreign_section_offset_map.values():
+
+                logger.debug("treating import from module 0x%04x as a load-later: %s%+#9x",
+                             reloc.target_module_id(),
+                             reloc.target_section().printable(),
+                             reloc.target_section_offset())
+                target_is_global = True
+
+            target_address = foreign_section_offset_map[reloc.target_section()] + reloc.target_section_offset()
 
         #
         # determine relocation type and make patches
@@ -260,8 +300,9 @@ def apply_relocations(flattened_binary_load_address: int,
 
             # should be -4, confirmed against ghidra
             relative_branch_offset = ((target_address - (reloc_offset + flattened_binary_load_address)) - 4) >> 2
-        
-            if (-0x8000 < relative_branch_offset < 0x8000) and bal_for_jal:
+
+            # bal-for-jal is for locals only
+            if not target_is_global and (-0x8000 < relative_branch_offset < 0x8000) and bal_for_jal:
                 base_instruction = None
 
                 if hibits == INSTRUCTION_JAL_TEMPLATE:
@@ -276,32 +317,18 @@ def apply_relocations(flattened_binary_load_address: int,
                 patched_instruction = base_instruction | (relative_branch_offset & 0xFFFF)
 
             else:
-                if bal_for_jal:
+                if not target_is_global and bal_for_jal:
                     logger.debug("bal_for_jal: target offset out of bounds, will write an imm26 instruction instead")
                 patched_instruction = hibits | (patched_offset >> 2)
 
-            logger.debug("R_MIPS_26: at 0x%06x (%s+0x%06x) change %08x to %08x",
-                reloc_offset,
-                reloc.section().printable(),
-                reloc.section_offset(),
-                original_instruction,
-                patched_instruction)
-            
+            _log_reloc_application(reloc, reloc_offset, original_instruction, patched_instruction)
             relocs_applied.append( (reloc, original_instruction, patched_instruction) )     
             flattened_binary.write32(reloc_offset, patched_instruction)
             
         elif reloc_type == RelocType.R_MIPS_32:
             patched_instruction = (0 if ignoring_offsets_in_binary else original_instruction) + target_address
             
-            logger.debug("R_MIPS_32: at 0x%06x (%s+0x%06x) change %08x to %08x (%s%+#09x)",
-                reloc_offset,
-                reloc.section().printable(),
-                reloc.section_offset(),
-                original_instruction,
-                patched_instruction,
-                reloc.target_section().printable(),
-                reloc.target_section_offset())
-            
+            _log_reloc_application(reloc, reloc_offset, original_instruction, patched_instruction)
             relocs_applied.append( (reloc, original_instruction, patched_instruction) )
             flattened_binary.write32(reloc_offset, patched_instruction)
         
@@ -328,25 +355,11 @@ def apply_relocations(flattened_binary_load_address: int,
                 patched_hi16_instruction = (last_hi16_instruction & 0xFFFF0000) + patched_hi16_value
                 patched_lo16_instruction = (original_instruction  & 0xFFFF0000) + patched_lo16_value
 
-                logger.debug("R_MIPS_HI16: at 0x%06x (%s+0x%06x) change %08x to %08x",
-                             last_hi16_offset,
-                             last_hi16_relocation.section().printable(),
-                             last_hi16_relocation.section_offset(),
-                             last_hi16_instruction,
-                             patched_hi16_instruction)
-                
+                _log_reloc_application(last_hi16_relocation, last_hi16_offset, last_hi16_instruction, patched_hi16_instruction)                
                 relocs_applied.append( (last_hi16_relocation, last_hi16_instruction, patched_hi16_instruction) )
                 flattened_binary.write32(last_hi16_offset, patched_hi16_instruction)
 
-                logger.debug("R_MIPS_LO16: at 0x%06x (%s+0x%06x) change %08x to %08x (%s%+#09x)",
-                             reloc_offset,
-                             reloc.section().printable(),
-                             reloc.section_offset(),
-                             original_instruction,
-                             patched_lo16_instruction,
-                             reloc.target_section().printable(),
-                             reloc.target_section_offset())
-                
+                _log_reloc_application(reloc, reloc_offset, original_instruction, patched_lo16_instruction)
                 relocs_applied.append( (reloc, original_instruction, patched_lo16_instruction) )     
                 flattened_binary.write32(reloc_offset, patched_lo16_instruction)
 

@@ -40,6 +40,7 @@ from .mspacman import mspacman_unpack
 from .nintendo import sm64_unpack, drmario_unpack, mariokart_unpack
 from .paradigm import aerofighters_unpack, beetle_unpack
 from .pm64 import pm64_unpack
+from .pstadium import pokestadium_unpack
 from .rare import bk_unpack, blastcorps_unpack, dk64_unpack, kig_unpack
 from .raretlb import conker_unpack, goldeneye_unpack, perfectdark_unpack
 from .re2 import re2_unpack
@@ -1453,6 +1454,58 @@ GAME_SPECIFIC_UNPACKERS = {
     # Tom and Jerry in Fists of Furry (E) (M6) [!]
     # Appears to be single-load
     "389bc437af911d02f02dbf1f5996d34b895ff1d61335ea9b8fbbfd8f1e5f2fa9": None,
+
+    # ------------------------------------------------------
+    # Pokemon Stadium and variants
+    # ------------------------------------------------------
+
+    # Pocket Monsters Stadium (J) [!]
+    # (the original Japanese version with limited roster)
+    "ed9f7cd7da795467c1e2b08ed1f878ff5aed906eae9ffe252074aef7a6703d8b": pokestadium_unpack,
+
+    # Pokemon Stadium (U) (V1.0) [!]
+    "502f6082a6436012a8b61419435dec1388869a90ed870e87e2d7bee88f831519": pokestadium_unpack,
+
+    # Pokemon Stadium (U) (V1.1) [!]
+    "9ffab805188efc39d706944d0ed70f74b8f462cf519a7fd760282f24b44a4983": pokestadium_unpack,
+
+    # Pokemon Stadium (E) (V1.0) [!]
+    "17e09da1cbb4f15d92c3e28f0a7ed8a071bf8740177260e59791616688fb0a32": pokestadium_unpack,
+
+    # Pokemon Stadium (E) (V1.1) [!]
+    "b844b60b8b042d76303a27708796a15d7b0b3dac6a04e9d057d4f87433065a00": pokestadium_unpack,
+
+    # Pokemon Stadium (F) [!]
+    "fdc743a54113b670b55ef84bda4eb8b25f5ef0de50ff1563f9a6de8a1f5fca08": pokestadium_unpack,
+
+    # Pokemon Stadium (G) [!]
+    "fd9a54dbcb80b85b0acf3e5c80f7c16631573f6e846d3ce74942a5954bafe438": pokestadium_unpack,
+
+    # Pokemon Stadium (S) [!]
+    "cca3d1b2df433e96984dcce1469894e12b7ccd37033eb51807afc3895210e55f": pokestadium_unpack,
+
+    # Pocket Monsters Stadium 2 (J) [!]
+    # (the international Pokemon Stadium 1 is based off this one)
+    "ba3dda9d33c047ed4902b9cb534c06195e5708972b7db16202087fcbd7c7a0e4": pokestadium_unpack,
+
+    # Pokemon Stadium 2 (U) [!]
+    # (international versions are Gold/Silver)
+    "8160abe7d4b9734317000c44e9f882efefe4cc6359eacded98be62f2811e40a9": pokestadium_unpack,
+
+    # Pokemon Stadium 2 (E) [!]
+    "f6c23949468f2d1f5a363a6c3f9cd53a2997b83f25ce9691f873c6141bdf4ce6": pokestadium_unpack,
+
+    # Pokemon Stadium 2 (F) [!]
+    "b661d92a94eb3c7a00cd27acc1e93d1e52299bf85a76397ee38e998a84af68ea": pokestadium_unpack,
+
+    # Pokemon Stadium 2 (G) [!]
+    "f13571ff5dff3abe42ef1d3c7d2350301ea54dd71ab3c4ff5bf761b0194d6bff": pokestadium_unpack,
+
+    # Pokemon Stadium 2 (S) [!]
+    "d91b466bebcf7bac8fb9d31709ea7d8049e810533195f7c4b2c402897d47babf": pokestadium_unpack,
+    
+    # Pocket Monsters Stadium Kin Gin (J) [!]
+    "e0ce95bbebb775181497cbf6414845d2dbf19b5d95840f0ab3baa8d61bb6f618": pokestadium_unpack,
 
     # ------------------------------------------------------
     # Confirmed single-load games
