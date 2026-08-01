@@ -135,6 +135,16 @@ Games using virtual memory:
 | Turok 2: Seeds of Evil                  | Iguana                | [acclaim.py](games/acclaim.py)       |
 | Turok 3: Shadow of Oblivion             | Iguana                | [acclaim.py](games/acclaim.py)       |
 
+Copy-protected games:
+
+| Game                                    | Developer             | Method                                                | 
+|-----------------------------------------|-----------------------|-------------------------------------------------------|
+| Banjo-Tooie                             | Rare                  | Constant 6105 CIC challenges for resource decryption  |
+| Jet Force Gemini                        | Rare                  | 6105 challenge/response check                         |
+| Kirby 64: The Crystal Shards            | HAL Laboratory        | IPL3 integrity check                                  |
+| Paper Mario                             | Intelligent Systems   | Extensive IPL3 and program integrity checks           |
+| Pokemon Stadium                         | Nintendo              | IPL3 integrity check                                  |
+
 Serious boot executable abuse:
 
 - Excitebike 64: Boot executable displays the "N64 SPORTS" logo while it loads
